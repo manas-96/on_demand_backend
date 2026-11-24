@@ -3,7 +3,9 @@
 use App\Http\Controllers\Admin\AdminBannerController;
 use App\Http\Controllers\Admin\AdminCustomerController;
 use App\Http\Controllers\Admin\AdminDashboardController;
+use App\Http\Controllers\Admin\AdminEmailTestController;
 use App\Http\Controllers\Admin\AdminFinancialController;
+use App\Http\Controllers\Admin\AdminNotificationController;
 use App\Http\Controllers\Admin\AdminPlaceController;
 use App\Http\Controllers\Admin\AdminProfileController;
 use App\Http\Controllers\Admin\AdminPromotionalVideoController;
@@ -12,13 +14,17 @@ use App\Http\Controllers\Admin\AdminRequestController;
 use App\Http\Controllers\Admin\AdminReviewController;
 use App\Http\Controllers\Admin\AdminServiceController;
 use App\Http\Controllers\Admin\AdminSettingController;
+use App\Http\Controllers\Admin\AdminSupportController;
 use App\Http\Controllers\Admin\AdminTechnicianController;
 use App\Http\Controllers\Auth\ProviderRegistrationController;
+use App\Http\Controllers\PrivacyPolicyController;
 use App\Http\Controllers\Provider\ProviderAccountController;
 use App\Http\Controllers\Provider\ProviderDashboardController;
 use App\Http\Controllers\Provider\ProviderEarningController;
 use App\Http\Controllers\Provider\ProviderRequestController;
+use App\Http\Controllers\Provider\ProviderSupportController;
 use App\Http\Controllers\Provider\ProviderTechnicianController;
+use App\Http\Controllers\SupportController;
 use App\Http\Controllers\Web\WebAuthController;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\EnsureUserIsProvider;
@@ -40,6 +46,13 @@ Route::post('/logout', [WebAuthController::class, 'logout'])->name('logout');
 // Public Provider Self-Registration
 Route::get('/register/provider', [ProviderRegistrationController::class, 'showRegistrationForm'])->name('register.provider');
 Route::post('/register/provider', [ProviderRegistrationController::class, 'register'])->name('register.provider.post');
+
+// Public Privacy Policy Page
+Route::get('/privacy-policy', [PrivacyPolicyController::class, 'show'])->name('privacy-policy');
+
+// Public Support & Helpdesk Page (throttled to 5 requests per minute per IP for security)
+Route::get('/support', [SupportController::class, 'show'])->name('support');
+Route::post('/support', [SupportController::class, 'store'])->middleware('throttle:5,1')->name('support.store');
 
 // Public Storage & Uploads File Server Routes
 Route::get('/storage/{path}', function (string $path) {
@@ -148,8 +161,20 @@ Route::middleware(['auth', EnsureUserIsAdmin::class])->prefix('admin')->name('ad
 
     // Reviews & Settings
     Route::get('/reviews', [AdminReviewController::class, 'index'])->name('reviews.index');
+    Route::get('/notifications', [AdminNotificationController::class, 'index'])->name('notifications.index');
+    Route::post('/notifications', [AdminNotificationController::class, 'sendPromotionalWeb'])->name('notifications.send');
+    Route::get('/email-test', [AdminEmailTestController::class, 'index'])->name('email-test.index');
+    Route::post('/email-test/send', [AdminEmailTestController::class, 'sendTestEmail'])->name('email-test.send');
     Route::get('/settings', [AdminSettingController::class, 'index'])->name('settings.index');
     Route::post('/settings', [AdminSettingController::class, 'update'])->name('settings.update');
+    Route::get('/privacy-policy', [AdminSettingController::class, 'editPrivacyPolicy'])->name('privacy-policy.edit');
+    Route::post('/privacy-policy', [AdminSettingController::class, 'updatePrivacyPolicy'])->name('privacy-policy.update');
+
+    // Customer Support Tickets
+    Route::get('/support', [AdminSupportController::class, 'index'])->name('support.index');
+    Route::get('/support/{id}', [AdminSupportController::class, 'show'])->name('support.show');
+    Route::get('/support/chat/{id}', [AdminSupportController::class, 'show'])->name('support.chat');
+    Route::post('/support/{id}/update-status', [AdminSupportController::class, 'updateStatus'])->name('support.update-status');
 
     // Profile & Password
     Route::get('/profile', [AdminProfileController::class, 'show'])->name('profile.show');
@@ -181,6 +206,8 @@ Route::middleware(['auth', EnsureUserIsProvider::class])->prefix('provider')->na
     Route::post('/requests/{id}/accept', [ProviderRequestController::class, 'acceptRequest'])->name('requests.accept');
     Route::post('/requests/{id}/bid', [ProviderRequestController::class, 'submitBid'])->name('requests.bid');
     Route::post('/requests/{id}/assign-technician', [ProviderRequestController::class, 'assignTechnician'])->name('requests.assign-technician');
+    Route::post('/requests/{id}/chat-notify', [ProviderRequestController::class, 'notifyChat'])->name('requests.chat-notify');
+    Route::post('/requests/{id}/chat-send', [ProviderRequestController::class, 'sendChat'])->name('requests.chat-send');
     Route::post('/quotes/{quoteId}/approve', [ProviderRequestController::class, 'approveQuote'])->name('quotes.approve');
     Route::put('/quotes/{quoteId}', [ProviderRequestController::class, 'updateQuote'])->name('quotes.update');
 
@@ -191,4 +218,8 @@ Route::middleware(['auth', EnsureUserIsProvider::class])->prefix('provider')->na
     Route::get('/profile', [ProviderAccountController::class, 'show'])->name('profile.show');
     Route::put('/profile', [ProviderAccountController::class, 'update'])->name('profile.update');
     Route::put('/profile/password', [ProviderAccountController::class, 'updatePassword'])->name('profile.password');
+
+    // Support & Helpdesk
+    Route::get('/support', [ProviderSupportController::class, 'index'])->name('support.index');
+    Route::get('/support/{id}', [ProviderSupportController::class, 'show'])->name('support.show');
 });

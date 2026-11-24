@@ -45,6 +45,25 @@ return [
         'app_id' => env('FIREBASE_APP_ID', '1:892839896492:web:651a769b7434992c750609'),
         'messaging_sender_id' => env('FIREBASE_MESSAGING_SENDER_ID', '892839896492'),
         'storage_bucket' => env('FIREBASE_STORAGE_BUCKET', 'on-demand-3834d.firebasestorage.app'),
+        'credentials' => env('FIREBASE_CREDENTIALS')
+            ? (str_starts_with(env('FIREBASE_CREDENTIALS'), '/') || preg_match('#^[a-zA-Z]:#', env('FIREBASE_CREDENTIALS'))
+                ? env('FIREBASE_CREDENTIALS')
+                : base_path(env('FIREBASE_CREDENTIALS')))
+            : storage_path('app/firebase-service-account.json'),
+    ],
+
+    'payments' => [
+        // `stripe` (real payments) or `fake` (development only: every payment succeeds instantly).
+        'driver' => env('PAYMENT_DRIVER', 'stripe'),
+        // Safety latch: fake payments are refused when APP_ENV=production unless this is explicitly true.
+        'allow_fake_in_production' => (bool) env('PAYMENT_ALLOW_FAKE_IN_PRODUCTION', false),
+    ],
+
+    'stripe' => [
+        'key' => env('STRIPE_KEY'),
+        'secret' => env('STRIPE_SECRET'),
+        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        'currency' => env('STRIPE_CURRENCY', 'usd'),
     ],
 
 ];

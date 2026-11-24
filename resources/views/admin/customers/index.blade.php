@@ -56,7 +56,7 @@
                                 {{ $c->is_active ? 'Active' : 'Suspended' }}
                             </span>
                         </td>
-                        <td class="px-6 py-4 text-xs text-slate-400">{{ $c->created_at->format('M d, Y') }}</td>
+                        <td class="px-6 py-4 text-xs text-slate-400">{{ $c->created_at->inDisplayTimezone()->format('M d, Y') }}</td>
                         <td class="px-6 py-4 text-right space-x-2">
                             <a href="{{ route('admin.customers.show', $c->id) }}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700">View</a>
                             <form method="POST" action="{{ route('admin.customers.toggle-status', $c->id) }}" class="inline-block">

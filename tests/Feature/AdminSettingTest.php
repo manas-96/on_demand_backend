@@ -72,4 +72,14 @@ class AdminSettingTest extends TestCase
             ],
         ]);
     }
+
+    public function test_admin_can_filter_service_requests_by_today_preset_and_custom_dates(): void
+    {
+        $response = $this->actingAs($this->adminUser)
+            ->get(route('admin.requests.index', ['date_preset' => 'today']));
+
+        $response->assertOk();
+        $response->assertSee('Quick Date:');
+        $response->assertSee('Today');
+    }
 }

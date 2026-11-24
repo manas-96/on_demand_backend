@@ -3,6 +3,7 @@
 namespace App\Services\Bidding;
 
 use App\Enums\BidOfferStatus;
+use App\Enums\NotificationType;
 use App\Enums\ProviderBidStatus;
 use App\Enums\ProviderJobRequestStatus;
 use App\Enums\ServiceRequestStatus;
@@ -11,6 +12,8 @@ use App\Models\ProviderBid;
 use App\Models\ProviderJobRequest;
 use App\Models\ServiceRequest;
 use App\Models\User;
+use App\Services\EmailNotificationService;
+use App\Services\PushNotificationService;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -141,6 +144,24 @@ class BiddingService
             ProviderJobRequest::where('service_request_id', $lockedRequest->id)
                 ->where('provider_id', '!=', $bid->provider_id)
                 ->update(['status' => ProviderJobRequestStatus::Rejected]);
+
+            app(PushNotificationService::class)->send(
+                userId: $lockedRequest->customer_id,
+                title: 'Job Accepted',
+                body: 'Your service request has been accepted by the provider.',
+                type: NotificationType::Booking->value,
+                data: [
+                    'type' => 'booking',
+                    'booking_id' => $lockedRequest->request_number,
+                    'screen' => 'booking_details',
+                ],
+                eventId: $lockedRequest->request_number.'_accepted_'.$lockedRequest->customer_id
+            );
+
+            app(EmailNotificationService::class)->sendRequestAcceptedOrAssignedToCustomer(
+                $lockedRequest,
+                $bid->provider
+            );
 
             return true;
         });

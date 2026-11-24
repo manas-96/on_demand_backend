@@ -56,6 +56,13 @@
             </div>
 
             <div>
+                <label for="tags" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Search Tags (Comma-Separated)</label>
+                <input type="text" id="tags" name="tags" value="{{ old('tags') }}" placeholder="e.g. pipe, leak, tap, basin, plumber" 
+                       class="w-full bg-slate-950 border border-slate-800 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-amber-400 transition">
+                <p class="text-[11px] text-slate-500 mt-1">Keywords or search tags that customers can search in the mobile app to find this category.</p>
+            </div>
+
+            <div>
                 <label for="image" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Category Image Upload</label>
                 <input type="file" id="image" name="image" accept="image/*"
                        class="w-full bg-slate-950 border border-slate-800 text-slate-300 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-amber-400 transition file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-400/20 file:text-amber-400 hover:file:bg-amber-400/30">

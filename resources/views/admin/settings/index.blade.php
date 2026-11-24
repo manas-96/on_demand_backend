@@ -124,7 +124,7 @@
                                 {{ $log->reason ?? 'Standard workflow state transition' }}
                             </td>
                             <td class="px-6 py-4 text-right text-slate-500">
-                                {{ $log->created_at->format('M d, Y H:i:s') }}
+                                {{ $log->created_at->inDisplayTimezone()->format('M d, Y H:i:s') }}
                             </td>
                         </tr>
                     @empty

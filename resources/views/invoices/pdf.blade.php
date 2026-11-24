@@ -139,7 +139,7 @@
         <table class="header-table">
             <tr>
                 <td>
-                    <div class="brand-logo">ON DEMAND</div>
+                    <div class="brand-logo">GRAB A HAND</div>
                     <div class="brand-subtitle">Home & On-Demand Service Solutions</div>
                 </td>
                 <td class="invoice-title">
@@ -229,7 +229,7 @@
                 <td style="text-align: right; color: #10B981;">-${{ number_format($discount, 2) }}</td>
             </tr>
             @endif
-            @if(isset($tipAmount) && $tipAmount > 0)
+            @if(isset($tipAmount) && (float) $tipAmount > 0)
             <tr>
                 <td style="color: #4F46E5; font-weight: bold;">Technician Tip:</td>
                 <td style="text-align: right; color: #4F46E5; font-weight: bold;">+${{ number_format($tipAmount, 2) }}</td>
@@ -245,13 +245,13 @@
             </tr>
             <tr>
                 <td style="font-weight: bold;">Remaining Net Balance Paid:</td>
-                <td style="text-align: right; font-weight: bold; color: #2563EB;">$0.00</td>
+                <td style="text-align: right; font-weight: bold; color: #2563EB;">${{ number_format(max(0.0, $total - $depositPaid), 2) }}</td>
             </tr>
         </table>
 
         <!-- Footer -->
         <div class="footer">
-            <p>Thank you for using On Demand Services! For support, email support@ondemand.com or call 1-800-555-ON-DEMAND.</p>
+            <p>Thank you for using Grab A Hand Services! For support, email support@grabahand.com or call 1-800-555-GRAB-A-HAND.</p>
             <p style="font-size: 10px; margin-top: 5px;">This is a computer-generated tax invoice and requires no physical signature.</p>
         </div>
     </div>

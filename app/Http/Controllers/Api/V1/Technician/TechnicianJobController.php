@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1\Technician;
 
 use App\Enums\InvoiceStatus;
 use App\Enums\JobAssignmentStatus;
+use App\Enums\NotificationType;
 use App\Enums\QuoteStatus;
 use App\Enums\ServiceRequestStatus;
 use App\Http\Controllers\Controller;
@@ -12,12 +13,18 @@ use App\Models\Invoice;
 use App\Models\JobAssignment;
 use App\Models\JobInspection;
 use App\Models\JobProgress;
+use App\Models\Review;
 use App\Models\SystemSetting;
+use App\Services\BusinessTime;
+use App\Services\EmailNotificationService;
 use App\Services\Invoice\InvoiceService;
 use App\Services\Media\ImageUploadService;
+use App\Services\PushNotificationService;
 use App\Services\Quote\QuoteService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 class TechnicianJobController extends Controller
@@ -50,30 +57,101 @@ class TechnicianJobController extends Controller
         ])
             ->where('technician_id', $technician->id);
 
-        if ($status = $request->get('status')) {
+        $isOngoing = $request->boolean('ongoing') || $request->get('status') === 'ongoing';
+
+        if ($isOngoing) {
+            $query->whereIn('status', [
+                JobAssignmentStatus::Assigned,
+                JobAssignmentStatus::Accepted,
+                JobAssignmentStatus::EnRoute,
+                JobAssignmentStatus::Arrived,
+                JobAssignmentStatus::Inspecting,
+                JobAssignmentStatus::InProgress,
+            ]);
+        } elseif ($status = $request->get('status')) {
             $query->where('status', $status);
         }
 
-        if ($request->boolean('today') || $request->get('date') === 'today') {
-            $today = now()->format('Y-m-d');
-            $query->where(function ($q) use ($today) {
-                $q->whereDate('assigned_at', $today)
-                    ->orWhereDate('created_at', $today)
-                    ->orWhereDate('completed_at', $today)
+        $dateFilter = $request->get('date_filter');
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+
+        if ($dateFilter === 'today' || $request->boolean('today') || $request->get('date') === 'today') {
+            $today = BusinessTime::today();
+            [$startDateTime, $endDateTime] = BusinessTime::utcRangeForLocalDates($today, $today);
+            $query->where(function ($q) use ($today, $startDateTime, $endDateTime, $isOngoing) {
+                $q->whereBetween('assigned_at', [$startDateTime, $endDateTime])
+                    ->orWhereBetween('created_at', [$startDateTime, $endDateTime])
                     ->orWhereHas('serviceRequest', function ($sq) use ($today) {
                         $sq->whereDate('preferred_date', $today);
-                    })
-                    ->orWhereIn('status', [
+                    });
+
+                if (! $isOngoing && request()->has('date_filter')) {
+                    $q->orWhereBetween('completed_at', [$startDateTime, $endDateTime]);
+                }
+
+                if (! request()->has('date_filter')) {
+                    $activeStatuses = [
+                        JobAssignmentStatus::Assigned,
                         JobAssignmentStatus::Accepted,
+                        JobAssignmentStatus::EnRoute,
                         JobAssignmentStatus::Arrived,
                         JobAssignmentStatus::Inspecting,
                         JobAssignmentStatus::InProgress,
-                        JobAssignmentStatus::Completed,
-                    ]);
+                    ];
+                    if (! $isOngoing) {
+                        $activeStatuses[] = JobAssignmentStatus::Completed;
+                    }
+                    $q->orWhereIn('status', $activeStatuses);
+                }
+            });
+
+            if ($isOngoing) {
+                $query->whereNotIn('status', [
+                    JobAssignmentStatus::Completed,
+                    JobAssignmentStatus::Declined,
+                ]);
+            }
+        } elseif ($dateFilter === 'this_week') {
+            $startDay = BusinessTime::now()->startOfWeek()->toDateString();
+            $endDay = BusinessTime::now()->endOfWeek()->toDateString();
+            [$startDateTime, $endDateTime] = BusinessTime::utcRangeForLocalDates($startDay, $endDay);
+            $query->where(function ($q) use ($startDateTime, $endDateTime, $startDay, $endDay) {
+                $q->whereBetween('assigned_at', [$startDateTime, $endDateTime])
+                    ->orWhereBetween('created_at', [$startDateTime, $endDateTime])
+                    ->orWhereBetween('completed_at', [$startDateTime, $endDateTime])
+                    ->orWhereHas('serviceRequest', function ($sq) use ($startDay, $endDay) {
+                        $sq->whereBetween('preferred_date', [$startDay, $endDay]);
+                    });
+            });
+        } elseif ($dateFilter === 'this_month') {
+            $startDay = BusinessTime::now()->startOfMonth()->toDateString();
+            $endDay = BusinessTime::now()->endOfMonth()->toDateString();
+            [$startDateTime, $endDateTime] = BusinessTime::utcRangeForLocalDates($startDay, $endDay);
+            $query->where(function ($q) use ($startDateTime, $endDateTime, $startDay, $endDay) {
+                $q->whereBetween('assigned_at', [$startDateTime, $endDateTime])
+                    ->orWhereBetween('created_at', [$startDateTime, $endDateTime])
+                    ->orWhereBetween('completed_at', [$startDateTime, $endDateTime])
+                    ->orWhereHas('serviceRequest', function ($sq) use ($startDay, $endDay) {
+                        $sq->whereBetween('preferred_date', [$startDay, $endDay]);
+                    });
+            });
+        } elseif (($dateFilter === 'custom' || $startDate || $endDate) && ($startDate || $endDate)) {
+            $startDay = Carbon::parse($startDate ?: $endDate)->toDateString();
+            $endDay = Carbon::parse($endDate ?: $startDate)->toDateString();
+            [$startDateTime, $endDateTime] = BusinessTime::utcRangeForLocalDates($startDay, $endDay);
+            $query->where(function ($q) use ($startDateTime, $endDateTime, $startDay, $endDay) {
+                $q->whereBetween('assigned_at', [$startDateTime, $endDateTime])
+                    ->orWhereBetween('created_at', [$startDateTime, $endDateTime])
+                    ->orWhereBetween('completed_at', [$startDateTime, $endDateTime])
+                    ->orWhereHas('serviceRequest', function ($sq) use ($startDay, $endDay) {
+                        $sq->whereBetween('preferred_date', [$startDay, $endDay]);
+                    });
             });
         }
 
-        $assignments = $query->orderBy('created_at', 'desc')->paginate(15);
+        $perPage = min((int) $request->get('per_page', 50), 100);
+        $assignments = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
         foreach ($assignments as $assignment) {
             if ($assignment->serviceRequest && $assignment->serviceRequest->status === ServiceRequestStatus::InProgress && $assignment->status !== JobAssignmentStatus::Completed) {
@@ -98,7 +176,7 @@ class TechnicianJobController extends Controller
         $rawId = trim((string) $assignmentId);
         $cleanId = preg_replace('/[^0-9]/', '', $rawId);
 
-        return JobAssignment::where('technician_id', $request->user()->id)
+        $assignment = JobAssignment::where('technician_id', $request->user()->id)
             ->where(function ($query) use ($rawId, $cleanId) {
                 if ($rawId !== '' && is_numeric($rawId)) {
                     $query->where('id', (int) $rawId)
@@ -117,7 +195,27 @@ class TechnicianJobController extends Controller
                     }
                 });
             })
-            ->firstOrFail();
+            ->first();
+
+        if (! $assignment) {
+            $assignment = JobAssignment::where('technician_id', $request->user()->id)
+                ->whereIn('status', [
+                    JobAssignmentStatus::Assigned,
+                    JobAssignmentStatus::Accepted,
+                    JobAssignmentStatus::EnRoute,
+                    JobAssignmentStatus::Arrived,
+                    JobAssignmentStatus::Inspecting,
+                    JobAssignmentStatus::InProgress,
+                ])
+                ->latest()
+                ->first();
+        }
+
+        if (! $assignment) {
+            abort(404, 'Job assignment not found.');
+        }
+
+        return $assignment;
     }
 
     /**
@@ -138,6 +236,7 @@ class TechnicianJobController extends Controller
             'serviceRequest.customer',
             'serviceRequest.photos',
             'serviceRequest.quotes.items',
+            'serviceRequest.invoices',
             'provider',
             'technician',
             'jobInspections',
@@ -150,10 +249,20 @@ class TechnicianJobController extends Controller
             }
         }
 
+        $latestQuote = $assignment->serviceRequest?->quotes()->latest()->first();
+        if ($latestQuote) {
+            $latestQuote->load('items');
+        }
+
+        $assignmentData = $assignment->toArray();
+        if ($latestQuote) {
+            $assignmentData['latest_quote'] = (new QuoteResource($latestQuote))->resolve();
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Job assignment details retrieved.',
-            'data' => $assignment,
+            'data' => $assignmentData,
         ]);
     }
 
@@ -167,6 +276,22 @@ class TechnicianJobController extends Controller
             'status' => JobAssignmentStatus::Accepted,
             'accepted_at' => now(),
         ]);
+
+        $serviceRequest = $assignment->serviceRequest;
+        if ($serviceRequest && $serviceRequest->customer_id) {
+            app(PushNotificationService::class)->send(
+                userId: $serviceRequest->customer_id,
+                title: 'Job Accepted',
+                body: 'Your technician has accepted your service request.',
+                type: NotificationType::Booking->value,
+                data: [
+                    'type' => 'booking',
+                    'booking_id' => $serviceRequest->request_number,
+                    'screen' => 'booking_details',
+                ],
+                eventId: $serviceRequest->request_number.'_job_accepted_cust_'.$assignment->id
+            );
+        }
 
         return response()->json([
             'success' => true,
@@ -185,6 +310,22 @@ class TechnicianJobController extends Controller
             'status' => JobAssignmentStatus::Arrived,
             'arrived_at' => now(),
         ]);
+
+        $serviceRequest = $assignment->serviceRequest;
+        if ($serviceRequest && $serviceRequest->customer_id) {
+            app(PushNotificationService::class)->send(
+                userId: $serviceRequest->customer_id,
+                title: 'Technician Arrived',
+                body: 'Your technician has arrived at your location.',
+                type: NotificationType::Booking->value,
+                data: [
+                    'type' => 'booking',
+                    'booking_id' => $serviceRequest->request_number,
+                    'screen' => 'booking_details',
+                ],
+                eventId: $serviceRequest->request_number.'_job_arrived_cust_'.$assignment->id
+            );
+        }
 
         return response()->json([
             'success' => true,
@@ -315,6 +456,14 @@ class TechnicianJobController extends Controller
             'status' => ServiceRequestStatus::Completed,
         ]);
 
+        // Issue the final invoice now so the customer can pay the remaining balance online.
+        $completedRequest = $assignment->serviceRequest;
+        if ($completedRequest && ! $completedRequest->invoices()->exists()) {
+            $approvedQuote = $completedRequest->quotes()->where('status', QuoteStatus::Approved)->latest()->first()
+                ?? $completedRequest->commercialQuote;
+            $this->invoiceService->generateInvoice($completedRequest, $approvedQuote);
+        }
+
         if (! empty($photoPaths)) {
             JobProgress::create([
                 'service_request_id' => $assignment->service_request_id,
@@ -323,6 +472,42 @@ class TechnicianJobController extends Controller
                 'description' => 'Job completed post-work proof photos.',
                 'photos' => $photoPaths,
             ]);
+        }
+
+        $serviceRequest = $assignment->serviceRequest;
+        if ($serviceRequest) {
+            // Customer Notification
+            app(PushNotificationService::class)->send(
+                userId: $serviceRequest->customer_id,
+                title: 'Job Completed',
+                body: 'Your service request has been completed.',
+                type: NotificationType::Booking->value,
+                data: [
+                    'type' => 'booking',
+                    'booking_id' => $serviceRequest->request_number,
+                    'screen' => 'booking_details',
+                ],
+                eventId: $serviceRequest->request_number.'_job_completed_cust_'.$assignment->id
+            );
+
+            // Technician Notification
+            app(PushNotificationService::class)->send(
+                userId: $assignment->technician_id,
+                title: 'Job Completed',
+                body: 'The assigned job has been marked as completed.',
+                type: NotificationType::Booking->value,
+                data: [
+                    'type' => 'booking',
+                    'booking_id' => $serviceRequest->request_number,
+                    'screen' => 'booking_details',
+                ],
+                eventId: $serviceRequest->request_number.'_job_completed_tech_'.$assignment->id
+            );
+
+            app(EmailNotificationService::class)->sendBookingCompleted(
+                $serviceRequest,
+                $assignment
+            );
         }
 
         return response()->json([
@@ -350,7 +535,17 @@ class TechnicianJobController extends Controller
 
         $technician = $request->user();
         $assignment = $this->findAssignment($request, $assignmentId);
-        $assignment->load(['serviceRequest', 'provider']);
+        $assignment->load(['serviceRequest.quotes', 'provider']);
+
+        // Prevent duplicate pending quote creation
+        $existingQuote = $assignment->serviceRequest?->quotes()->latest()->first();
+        if ($existingQuote && $existingQuote->status === QuoteStatus::Pending) {
+            return response()->json([
+                'success' => true,
+                'message' => 'A quotation has already been submitted and is currently awaiting approval.',
+                'data' => new QuoteResource($existingQuote->load('items')),
+            ], 200);
+        }
 
         $provider = $assignment->provider;
 
@@ -369,6 +564,28 @@ class TechnicianJobController extends Controller
             discount: (float) ($request->discount ?? 0.00),
             notes: $request->notes
         );
+
+        $assignment->update(['status' => JobAssignmentStatus::Inspecting]);
+
+        if ($provider) {
+            try {
+                app(PushNotificationService::class)->send(
+                    userId: $provider->id,
+                    title: 'Commercial Quotation Submitted',
+                    body: "Technician {$technician->name} has submitted a quotation ($".number_format((float) $quote->total, 2).") for request #{$assignment->serviceRequest?->request_number}. Please review and approve.",
+                    type: NotificationType::Booking->value,
+                    data: [
+                        'type' => 'quote_submitted',
+                        'quote_id' => $quote->id,
+                        'request_id' => $assignment->serviceRequest?->id,
+                        'screen' => 'request_details',
+                    ],
+                    eventId: $assignment->serviceRequest?->request_number.'_quote_submitted_'.$quote->id
+                );
+            } catch (\Throwable $e) {
+                Log::warning('Failed to send quote notification to provider: '.$e->getMessage());
+            }
+        }
 
         return response()->json([
             'success' => true,
@@ -623,20 +840,21 @@ class TechnicianJobController extends Controller
                 'labor_cost' => $laborCost,
                 'materials_subtotal' => $materialsSubtotal,
                 'items' => $items,
+                'deposit_paid' => $serviceRequest->depositPaidAmount(),
+                'balance_due' => $invoice->status === InvoiceStatus::Paid
+                    ? 0.0
+                    : max(0.0, round((float) $invoice->total - (float) $invoice->tip_amount - $serviceRequest->depositPaidAmount(), 2)),
+                'is_paid' => $invoice->status === InvoiceStatus::Paid,
+                'payment_status' => $invoice->status === InvoiceStatus::Paid ? 'paid' : 'awaiting_customer_payment',
             ],
         ]);
     }
 
     /**
-     * Settle final invoice payment and collect payout.
+     * Download PDF invoice for assigned job.
      */
-    public function settleInvoice(Request $request, string|int $assignmentId): JsonResponse
+    public function downloadInvoice(Request $request, string|int $assignmentId)
     {
-        $request->validate([
-            'tip_amount' => ['nullable', 'numeric', 'min:0'],
-            'payment_method' => ['nullable', 'string'],
-        ]);
-
         $assignment = $this->findAssignment($request, $assignmentId);
         $serviceRequest = $assignment->serviceRequest;
 
@@ -644,54 +862,144 @@ class TechnicianJobController extends Controller
             return response()->json(['success' => false, 'message' => 'Service request not found.'], 404);
         }
 
+        $serviceRequest->load([
+            'category',
+            'subCategory',
+            'service',
+            'customer',
+            'targetProvider',
+            'jobAssignments.technician',
+            'quotes.items',
+            'invoices.items',
+        ]);
+
+        $customer = $serviceRequest->customer;
+        $provider = $serviceRequest->targetProvider;
+        $technician = $request->user();
+        $quote = $serviceRequest->quotes()->latest()->first();
         $invoice = $serviceRequest->invoices()->latest()->first();
 
-        if (! $invoice) {
-            $quote = $serviceRequest->quotes()->latest()->first();
-            $invoice = $this->invoiceService->generateInvoice($serviceRequest, $quote);
+        $invoiceNumber = $invoice?->invoice_number ?? 'INV-'.str_pad((string) $serviceRequest->id, 6, '0', STR_PAD_LEFT);
+        $requestNumber = $serviceRequest->request_number ?? 'SR-'.$serviceRequest->id;
+
+        $items = [];
+        $subtotal = 0.0;
+        $tax = 0.0;
+        $discount = 0.0;
+        $total = 0.0;
+
+        if ($invoice && $invoice->items->isNotEmpty()) {
+            foreach ($invoice->items as $invItem) {
+                $amt = (float) $invItem->amount;
+                $items[] = [
+                    'description' => $invItem->description,
+                    'type' => 'Service',
+                    'unit_price' => $amt,
+                    'total_price' => $amt,
+                ];
+            }
+            $subtotal = (float) $invoice->subtotal;
+            $tax = (float) $invoice->tax;
+            $discount = (float) $invoice->discount;
+            $total = (float) $invoice->total;
+        } elseif ($quote && $quote->items->isNotEmpty()) {
+            foreach ($quote->items as $qItem) {
+                $items[] = [
+                    'description' => $qItem->description,
+                    'type' => $qItem->type ?? 'Service',
+                    'unit_price' => (float) $qItem->unit_price,
+                    'total_price' => (float) $qItem->total_price,
+                ];
+            }
+            $subtotal = (float) $quote->labor_subtotal + (float) $quote->material_subtotal;
+            $tax = (float) $quote->tax;
+            $discount = (float) $quote->discount;
+            $total = (float) $quote->total;
+        } else {
+            $basePrice = (float) ($serviceRequest->service?->base_price ?? 100.00);
+            $items[] = [
+                'description' => $serviceRequest->service?->name ?? $serviceRequest->description ?? 'Service Request Standard Package',
+                'type' => 'Service',
+                'unit_price' => $basePrice,
+                'total_price' => $basePrice,
+            ];
+            $subtotal = $basePrice;
+            $tax = round($subtotal * 0.05, 2);
+            $total = $subtotal + $tax;
         }
 
-        $tipAmount = (float) ($request->tip_amount ?? 0.0);
-        $subtotal = (float) $invoice->subtotal;
-        if ($subtotal == 0.0 && $invoice->items->isNotEmpty()) {
-            $subtotal = (float) $invoice->items->sum('amount');
-        }
-
-        $tax = (float) $invoice->tax;
         if ($tax == 0.0 && $subtotal > 0) {
             $tax = round($subtotal * 0.05, 2);
         }
 
-        $discount = (float) $invoice->discount;
-        $grandTotal = max(0.0, round($subtotal + $tax - $discount + $tipAmount, 2));
+        $tipAmount = (float) ($invoice?->tip_amount ?? 0);
+        if ($invoice && (float) $invoice->total > 0) {
+            $total = (float) $invoice->total;
+        } else {
+            $total = round($subtotal + $tax - $discount + $tipAmount, 2);
+        }
+        $depositPaid = min($serviceRequest->depositPaidAmount(), $total);
 
-        $invoice->update([
+        $pdfData = [
+            'invoiceNumber' => $invoiceNumber,
+            'requestNumber' => $requestNumber,
+            'dateIssued' => BusinessTime::now($serviceRequest->localTimezone())->format('M d, Y'),
+            'customerName' => $customer?->name ?? 'Valued Customer',
+            'customerEmail' => $customer?->email ?? 'customer@example.com',
+            'customerPhone' => $customer?->phone ?? 'N/A',
+            'serviceAddress' => $serviceRequest->address_line ?? 'Customer Address',
+            'providerName' => $provider?->name ?? 'Deluxe Home Care Services',
+            'technicianName' => $technician?->name ?? 'Assigned Technician',
+            'serviceTitle' => $serviceRequest->service?->name ?? $serviceRequest->description ?? 'On-Demand Service',
+            'categoryName' => $serviceRequest->category?->name ?? 'General Maintenance',
+            'items' => $items,
             'subtotal' => $subtotal,
             'tax' => $tax,
-            'tip_amount' => $tipAmount,
-            'total' => $grandTotal,
-            'status' => InvoiceStatus::Paid,
-        ]);
+            'discount' => $discount,
+            'tipAmount' => $tipAmount,
+            'total' => $total,
+            'depositPaid' => $depositPaid,
+        ];
 
-        $assignment->update([
-            'status' => JobAssignmentStatus::Completed,
-            'completed_at' => now(),
-        ]);
+        $pdf = Pdf::loadView('invoices.pdf', $pdfData);
+        $filename = "Invoice-{$requestNumber}.pdf";
 
-        $serviceRequest->update([
-            'status' => ServiceRequestStatus::Completed,
-        ]);
+        if ($request->boolean('inline') || $request->get('disposition') === 'inline') {
+            return $pdf->stream($filename);
+        }
+
+        return $pdf->download($filename);
+    }
+
+    /**
+     * Get technician's rating summary and star breakdown.
+     */
+    public function getRatingSummary(Request $request): JsonResponse
+    {
+        $technician = $request->user();
+        if (! $technician->isTechnician()) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized actor.'], 403);
+        }
+
+        $reviews = Review::where('technician_id', $technician->id)->get();
+        $totalReviews = $reviews->count();
+        $averageRating = $totalReviews > 0 ? round((float) $reviews->avg('rating'), 1) : 0.0;
+
+        $starCounts = [
+            5 => $reviews->where('rating', 5)->count(),
+            4 => $reviews->where('rating', 4)->count(),
+            3 => $reviews->where('rating', 3)->count(),
+            2 => $reviews->where('rating', 2)->count(),
+            1 => $reviews->where('rating', 1)->count(),
+        ];
 
         return response()->json([
             'success' => true,
-            'message' => 'Invoice payment settled and credited to wallet.',
+            'message' => 'Rating summary retrieved.',
             'data' => [
-                'invoice_id' => $invoice->id,
-                'invoice_number' => $invoice->invoice_number,
-                'status' => 'paid',
-                'tip_amount' => $tipAmount,
-                'grand_payout' => $grandTotal,
-                'settled_at' => now()->toIso8601String(),
+                'average_rating' => (float) $averageRating,
+                'total_reviews' => (int) $totalReviews,
+                'star_counts' => $starCounts,
             ],
         ]);
     }

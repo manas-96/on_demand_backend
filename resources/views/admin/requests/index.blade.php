@@ -35,15 +35,15 @@
                 <!-- From Date -->
                 <div class="md:col-span-2">
                     <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">From Date</label>
-                    <input type="date" name="from_date" value="{{ request('from_date') }}" 
-                        class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <input type="text" name="from_date" value="{{ $fromDate ?? request('from_date') }}" placeholder="Select From Date..."
+                        class="datepicker w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
 
                 <!-- To Date -->
                 <div class="md:col-span-2">
                     <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">To Date</label>
-                    <input type="date" name="to_date" value="{{ request('to_date') }}" 
-                        class="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <input type="text" name="to_date" value="{{ $toDate ?? request('to_date') }}" placeholder="Select To Date..."
+                        class="datepicker w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
 
                 <!-- Submit & Clear Buttons -->
@@ -76,13 +76,13 @@
                 <div class="flex items-center space-x-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
                     <span class="text-[11px] font-semibold text-slate-500 mr-1 uppercase tracking-wider">Quick Date:</span>
                     @php
-                        $currentPreset = request('date_preset');
+                        $currentPreset = $datePreset ?? request('date_preset');
                         $presetBaseParams = request()->except(['date_preset', 'from_date', 'to_date', 'page']);
                     @endphp
-                    <a href="{{ route('admin.requests.index', array_merge($presetBaseParams, ['date_preset' => 'today'])) }}" class="px-2.5 py-1 rounded-md text-xs font-medium {{ $currentPreset == 'today' ? 'bg-emerald-600 text-white' : 'bg-slate-800/80 text-slate-400 hover:text-white' }}">Today</a>
-                    <a href="{{ route('admin.requests.index', array_merge($presetBaseParams, ['date_preset' => 'yesterday'])) }}" class="px-2.5 py-1 rounded-md text-xs font-medium {{ $currentPreset == 'yesterday' ? 'bg-emerald-600 text-white' : 'bg-slate-800/80 text-slate-400 hover:text-white' }}">Yesterday</a>
-                    <a href="{{ route('admin.requests.index', array_merge($presetBaseParams, ['date_preset' => 'this_week'])) }}" class="px-2.5 py-1 rounded-md text-xs font-medium {{ $currentPreset == 'this_week' ? 'bg-emerald-600 text-white' : 'bg-slate-800/80 text-slate-400 hover:text-white' }}">This Week</a>
-                    <a href="{{ route('admin.requests.index', array_merge($presetBaseParams, ['date_preset' => 'this_month'])) }}" class="px-2.5 py-1 rounded-md text-xs font-medium {{ $currentPreset == 'this_month' ? 'bg-emerald-600 text-white' : 'bg-slate-800/80 text-slate-400 hover:text-white' }}">This Month</a>
+                    <a href="{{ route('admin.requests.index', array_merge($presetBaseParams, ['date_preset' => 'today'])) }}" class="px-2.5 py-1 rounded-md text-xs font-medium {{ $currentPreset == 'today' ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-800/80 text-slate-400 hover:text-white' }}">Today</a>
+                    <a href="{{ route('admin.requests.index', array_merge($presetBaseParams, ['date_preset' => 'yesterday'])) }}" class="px-2.5 py-1 rounded-md text-xs font-medium {{ $currentPreset == 'yesterday' ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-800/80 text-slate-400 hover:text-white' }}">Yesterday</a>
+                    <a href="{{ route('admin.requests.index', array_merge($presetBaseParams, ['date_preset' => 'this_week'])) }}" class="px-2.5 py-1 rounded-md text-xs font-medium {{ $currentPreset == 'this_week' ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-800/80 text-slate-400 hover:text-white' }}">This Week</a>
+                    <a href="{{ route('admin.requests.index', array_merge($presetBaseParams, ['date_preset' => 'this_month'])) }}" class="px-2.5 py-1 rounded-md text-xs font-medium {{ $currentPreset == 'this_month' ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-800/80 text-slate-400 hover:text-white' }}">This Month</a>
                 </div>
             </div>
         </form>
@@ -106,7 +106,7 @@
                     <tr class="hover:bg-slate-800/40">
                         <td class="px-6 py-4 font-bold text-white">
                             {{ $r->request_number }}
-                            <div class="text-xs text-slate-500">{{ $r->created_at->format('M d, Y H:i') }}</div>
+                            <div class="text-xs text-slate-500">{{ $r->created_at->inDisplayTimezone()->format('M d, Y H:i') }}</div>
                         </td>
                         <td class="px-6 py-4 font-medium text-slate-200">
                             {{ $r->service->name ?? 'Service' }}

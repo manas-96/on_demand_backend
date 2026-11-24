@@ -24,6 +24,10 @@ class JobAssignment extends Model
         'status',
     ];
 
+    protected $appends = [
+        'can_chat_customer',
+    ];
+
     protected function casts(): array
     {
         return [
@@ -34,6 +38,11 @@ class JobAssignment extends Model
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
         ];
+    }
+
+    public function getCanChatCustomerAttribute(): bool
+    {
+        return $this->technician_id !== null && $this->status !== JobAssignmentStatus::Declined;
     }
 
     public function serviceRequest(): BelongsTo

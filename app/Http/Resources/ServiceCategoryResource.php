@@ -22,6 +22,7 @@ class ServiceCategoryResource extends JsonResource
             'icon' => $this->icon,
             'image' => $this->image_url ?? $this->image,
             'minimum_booking_charge' => (float) ($this->effective_minimum_booking_charge ?? $this->minimum_booking_charge ?? 0.00),
+            'tags' => $this->tags ?? [],
             'is_active' => (bool) $this->is_active,
             'subcategories_count' => $this->whenCounted('subcategories'),
             'subcategories' => ServiceCategoryResource::collection($this->whenLoaded('subcategories')),

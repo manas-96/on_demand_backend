@@ -52,56 +52,82 @@
 
     <!-- Table -->
     <div class="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">
-        <table class="w-full text-left text-sm text-slate-300">
-            <thead class="bg-slate-950 text-xs uppercase font-semibold text-slate-400 border-b border-slate-800">
-                <tr>
-                    <th class="px-6 py-4">Company Profile</th>
-                    <th class="px-6 py-4">Radius & Commission</th>
-                    <th class="px-6 py-4">Technicians</th>
-                    <th class="px-6 py-4">Approval</th>
-                    <th class="px-6 py-4 text-right">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-800">
+        <div class="overflow-x-auto overflow-y-auto max-h-[650px] custom-scrollbar">
+            <table class="w-full min-w-[1100px] text-left text-sm text-slate-300">
+                <thead class="bg-slate-950 text-xs uppercase font-semibold text-slate-400 border-b border-slate-800 sticky top-0 z-10">
+                    <tr>
+                        <th class="px-6 py-4 whitespace-nowrap bg-slate-950">Company Profile</th>
+                        <th class="px-6 py-4 whitespace-nowrap bg-slate-950">Service Categories</th>
+                        <th class="px-6 py-4 whitespace-nowrap bg-slate-950">Radius & Commission</th>
+                        <th class="px-6 py-4 whitespace-nowrap bg-slate-950">Technicians</th>
+                        <th class="px-6 py-4 whitespace-nowrap bg-slate-950">Approval</th>
+                        <th class="px-6 py-4 text-right whitespace-nowrap bg-slate-950">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800">
                 @forelse($providers as $p)
                     <tr class="hover:bg-slate-800/40">
-                        <td class="px-6 py-4">
+                        <td class="px-6 py-4 whitespace-nowrap">
                             <div class="font-bold text-white">{{ $p->company_name }}</div>
                             <div class="text-xs text-slate-400">{{ $p->user->email }} • Reg: {{ $p->business_registration ?? 'N/A' }}</div>
                         </td>
-                        <td class="px-6 py-4 text-xs text-slate-300">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            @php
+                                $cats = $p->providerServices->map(fn($ps) => $ps->service->category ?? null)->filter()->unique('id');
+                            @endphp
+                            @if($cats->count() > 0)
+                                <div class="flex items-center space-x-1.5 flex-wrap max-w-xs gap-y-1">
+                                    @foreach($cats->take(2) as $c)
+                                        <span class="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                                            {{ $c->name }}
+                                        </span>
+                                    @endforeach
+                                    @if($cats->count() > 2)
+                                        <span class="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-800 text-slate-400">
+                                            +{{ $cats->count() - 2 }}
+                                        </span>
+                                    @endif
+                                </div>
+                            @else
+                                <span class="text-xs text-slate-500 italic">None</span>
+                            @endif
+                        </td>
+                        <td class="px-6 py-4 text-xs text-slate-300 whitespace-nowrap">
                             <div>Radius: <strong>{{ $p->service_radius_km }}km</strong></div>
                             <div>Commission: <strong class="text-amber-400">{{ number_format($p->commission ?? 10.00, 2) }}%</strong></div>
                             <div class="text-slate-400 mt-0.5">{{ $p->address ?? 'Address not specified' }}</div>
                         </td>
-                        <td class="px-6 py-4">
+                        <td class="px-6 py-4 whitespace-nowrap">
                             <span class="px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-400/10 text-amber-400 border border-amber-400/20">
                                 {{ $p->technicians->count() }} Techs
                             </span>
                         </td>
-                        <td class="px-6 py-4">
+                        <td class="px-6 py-4 whitespace-nowrap">
                             <span class="px-2.5 py-1 rounded-md text-xs font-semibold {{ $p->is_approved ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20' }}">
                                 {{ $p->is_approved ? 'Approved' : 'Pending' }}
                             </span>
                         </td>
-                        <td class="px-6 py-4 text-right space-x-2">
-                            <a href="{{ route('admin.providers.show', $p->id) }}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700">View Details</a>
-                            <a href="{{ route('admin.providers.edit', $p->id) }}" class="px-3 py-1.5 rounded-lg bg-amber-400/10 hover:bg-amber-400/20 text-xs font-semibold text-amber-400 border border-amber-400/30">Edit</a>
-                            <form method="POST" action="{{ route('admin.providers.toggle-approval', $p->id) }}" class="inline-block">
-                                @csrf
-                                <button type="submit" class="px-3 py-1.5 rounded-lg {{ $p->is_approved ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' }} text-xs font-medium">
-                                    {{ $p->is_approved ? 'Revoke Approval' : 'Approve' }}
-                                </button>
-                            </form>
+                        <td class="px-6 py-4 text-right whitespace-nowrap">
+                            <div class="flex items-center justify-end space-x-2">
+                                <a href="{{ route('admin.providers.show', $p->id) }}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700">View Details</a>
+                                <a href="{{ route('admin.providers.edit', $p->id) }}" class="px-3 py-1.5 rounded-lg bg-amber-400/10 hover:bg-amber-400/20 text-xs font-semibold text-amber-400 border border-amber-400/30">Edit</a>
+                                <form method="POST" action="{{ route('admin.providers.toggle-approval', $p->id) }}" class="inline-block">
+                                    @csrf
+                                    <button type="submit" class="px-3 py-1.5 rounded-lg {{ $p->is_approved ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' }} text-xs font-medium">
+                                        {{ $p->is_approved ? 'Revoke Approval' : 'Approve' }}
+                                    </button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="5" class="px-6 py-8 text-center text-slate-500">No service providers found.</td>
+                        <td colspan="6" class="px-6 py-8 text-center text-slate-500">No service providers found.</td>
                     </tr>
                 @endforelse
             </tbody>
         </table>
+        </div>
         <div class="p-4 border-t border-slate-800">
             {{ $providers->withQueryString()->links() }}
         </div>

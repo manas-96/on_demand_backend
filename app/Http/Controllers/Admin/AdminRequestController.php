@@ -17,6 +17,8 @@ use App\Models\Quote;
 use App\Models\Review;
 use App\Models\ServiceRequest;
 use App\Models\User;
+use App\Services\BusinessTime;
+use App\Services\EmailNotificationService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -46,39 +48,53 @@ class AdminRequestController extends Controller
         }
 
         $datePreset = $request->get('date_preset');
+        $fromDate = $request->get('from_date');
+        $toDate = $request->get('to_date');
+
+        // Presets and typed dates are business-local calendar days (DISPLAY_TIMEZONE).
+        $localNow = BusinessTime::now();
+
         if ($datePreset) {
             switch ($datePreset) {
                 case 'today':
-                    $query->whereDate($dateField, now()->toDateString());
+                    $fromDate = $localNow->toDateString();
+                    $toDate = $localNow->toDateString();
                     break;
                 case 'yesterday':
-                    $query->whereDate($dateField, now()->subDay()->toDateString());
+                    $fromDate = $localNow->copy()->subDay()->toDateString();
+                    $toDate = $localNow->copy()->subDay()->toDateString();
                     break;
                 case 'this_week':
-                    $query->whereBetween($dateField, [now()->startOfWeek(), now()->endOfWeek()]);
+                    $fromDate = $localNow->copy()->startOfWeek()->toDateString();
+                    $toDate = $localNow->copy()->endOfWeek()->toDateString();
                     break;
                 case 'this_month':
-                    $query->whereBetween($dateField, [now()->startOfMonth(), now()->endOfMonth()]);
+                    $fromDate = $localNow->copy()->startOfMonth()->toDateString();
+                    $toDate = $localNow->copy()->endOfMonth()->toDateString();
                     break;
                 case 'last_month':
-                    $query->whereBetween($dateField, [
-                        now()->subMonth()->startOfMonth(),
-                        now()->subMonth()->endOfMonth(),
-                    ]);
+                    $fromDate = $localNow->copy()->subMonthNoOverflow()->startOfMonth()->toDateString();
+                    $toDate = $localNow->copy()->subMonthNoOverflow()->endOfMonth()->toDateString();
                     break;
             }
-        } else {
-            if ($fromDate = $request->get('from_date')) {
+        }
+
+        if ($dateField === 'preferred_date') {
+            // Wall-clock date column: compare as-is.
+            if ($fromDate) {
                 $query->whereDate($dateField, '>=', $fromDate);
             }
-            if ($toDate = $request->get('to_date')) {
+            if ($toDate) {
                 $query->whereDate($dateField, '<=', $toDate);
             }
+        } elseif ($fromDate || $toDate) {
+            // UTC timestamp column: convert the local days to a UTC range.
+            $query->whereBetween($dateField, BusinessTime::utcRangeForLocalDates($fromDate ?: '1970-01-01', $toDate ?: '2999-12-31'));
         }
 
         $requests = $query->latest()->paginate(15);
 
-        return view('admin.requests.index', compact('requests'));
+        return view('admin.requests.index', compact('requests', 'fromDate', 'toDate', 'datePreset', 'dateField'));
     }
 
     /**
@@ -198,18 +214,23 @@ class AdminRequestController extends Controller
             $total = $subtotal + $tax;
         }
 
-        $depositPaid = min(250.00, $total > 0 ? $total : 250.00);
         $tipAmount = (float) ($invoice?->tip_amount ?? 0);
+        if ($invoice && (float) $invoice->total > 0) {
+            $total = (float) $invoice->total;
+        } else {
+            $total = round($subtotal + $tax - $discount + $tipAmount, 2);
+        }
+        $depositPaid = min($serviceRequest->depositPaidAmount(), $total);
 
         $pdfData = [
             'invoiceNumber' => $invoiceNumber,
             'requestNumber' => $requestNumber,
-            'dateIssued' => now()->format('M d, Y'),
+            'dateIssued' => BusinessTime::now($serviceRequest->localTimezone())->format('M d, Y'),
             'customerName' => $customer?->name ?? 'Valued Customer',
             'customerEmail' => $customer?->email ?? 'customer@example.com',
             'customerPhone' => $customer?->phone ?? 'N/A',
             'serviceAddress' => $serviceRequest->address_line ?? 'Customer Address',
-            'providerName' => $provider?->name ?? 'On Demand Provider',
+            'providerName' => $provider?->name ?? 'Grab A Hand Provider',
             'technicianName' => $technician?->name ?? 'Assigned Technician',
             'serviceTitle' => $serviceRequest->service?->name ?? $serviceRequest->description ?? 'On-Demand Service',
             'categoryName' => $serviceRequest->category?->name ?? 'General Maintenance',
@@ -310,6 +331,14 @@ class AdminRequestController extends Controller
             'new_status' => $validated['new_status'],
             'reason' => 'ADMIN OVERRIDE: '.$validated['reason'],
         ]);
+
+        if ($validated['new_status'] === 'cancelled') {
+            app(EmailNotificationService::class)->sendBookingCancelled(
+                $serviceRequest,
+                'admin',
+                $validated['reason']
+            );
+        }
 
         return back()->with('success', "Request status overridden to {$validated['new_status']} with audit record.");
     }

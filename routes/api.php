@@ -1,13 +1,20 @@
 <?php
 
+use App\Http\Controllers\Admin\AdminNotificationController;
 use App\Http\Controllers\Api\V1\Auth\AuthController;
+use App\Http\Controllers\Api\V1\ChatNotificationController;
 use App\Http\Controllers\Api\V1\Customer\CustomerAddressController;
 use App\Http\Controllers\Api\V1\Customer\CustomerCategoryController;
 use App\Http\Controllers\Api\V1\Customer\CustomerProviderController;
 use App\Http\Controllers\Api\V1\Customer\CustomerRequestController;
+use App\Http\Controllers\Api\V1\DeviceTokenController;
 use App\Http\Controllers\Api\V1\Provider\ProviderBidController;
+use App\Http\Controllers\Api\V1\StripeWebhookController;
 use App\Http\Controllers\Api\V1\Technician\TechnicianJobController;
+use App\Http\Controllers\Api\V1\UserNotificationController;
+use App\Http\Controllers\PrivacyPolicyController;
 use App\Http\Controllers\Provider\ProviderRequestController;
+use App\Http\Controllers\SupportController;
 use App\Models\SystemSetting;
 use Illuminate\Support\Facades\Route;
 
@@ -21,7 +28,14 @@ Route::prefix('v1')->group(function () {
 
     // Public Auth & Settings
     Route::post('/auth/register', [AuthController::class, 'register']);
+    Route::post('/auth/verify-email-otp', [AuthController::class, 'verifyEmailOtp']);
+    Route::post('/auth/resend-email-otp', [AuthController::class, 'resendEmailOtp'])->middleware('throttle:3,1');
     Route::post('/auth/login', [AuthController::class, 'login']);
+    Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
+    Route::post('/auth/reset-password', [AuthController::class, 'resetPassword'])->middleware('throttle:5,1');
+    Route::post('/stripe/webhook', StripeWebhookController::class);
+    Route::get('/privacy-policy', [PrivacyPolicyController::class, 'apiShow']);
+    Route::post('/support', [SupportController::class, 'apiStore'])->middleware('throttle:5,1');
 
     Route::get('/settings', function () {
         $settings = SystemSetting::getSettings();
@@ -41,6 +55,21 @@ Route::prefix('v1')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);
         Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+        // Device Token Registration
+        Route::post('/device-token', [DeviceTokenController::class, 'store']);
+        Route::delete('/device-token', [DeviceTokenController::class, 'destroy']);
+
+        // In-App Notification History
+        Route::get('/notifications', [UserNotificationController::class, 'index']);
+        Route::post('/notifications/{id}/read', [UserNotificationController::class, 'read']);
+        Route::post('/notifications/read-all', [UserNotificationController::class, 'readAll']);
+
+        // Chat / Firestore Push Notification Dispatcher
+        Route::post('/chat/notify', [ChatNotificationController::class, 'notify']);
+
+        // Admin Promotional Push Notification API
+        Route::post('/admin/notifications/promotional', [AdminNotificationController::class, 'sendPromotionalApi']);
 
         // Customer APIs
         Route::prefix('customer')->group(function () {
@@ -62,14 +91,16 @@ Route::prefix('v1')->group(function () {
             Route::get('/requests', [CustomerRequestController::class, 'index']);
             Route::post('/requests', [CustomerRequestController::class, 'store']);
             Route::get('/requests/{id}', [CustomerRequestController::class, 'show']);
+            Route::post('/requests/{id}/cancel', [CustomerRequestController::class, 'cancel']);
             Route::get('/requests/{id}/bids', [CustomerRequestController::class, 'bids']);
             Route::get('/requests/{id}/quote', [CustomerRequestController::class, 'getQuote']);
             Route::get('/requests/{id}/invoice/download', [CustomerRequestController::class, 'downloadInvoice']);
             Route::post('/bids/{bidId}/negotiate', [CustomerRequestController::class, 'negotiate']);
             Route::post('/bids/{bidId}/select', [CustomerRequestController::class, 'selectBid']);
             Route::post('/quotes/{quoteId}/approve', [CustomerRequestController::class, 'approveQuote']);
-            Route::post('/requests/{id}/pay', [CustomerRequestController::class, 'payRequest']);
-            Route::post('/invoices/{invoiceId}/pay', [CustomerRequestController::class, 'pay']);
+            Route::get('/requests/{id}/payment-summary', [CustomerRequestController::class, 'paymentSummary']);
+            Route::post('/requests/{id}/payment-intent', [CustomerRequestController::class, 'paymentIntent']);
+            Route::post('/requests/{id}/payment-confirm', [CustomerRequestController::class, 'confirmPayment']);
             Route::get('/requests/{id}/review', [CustomerRequestController::class, 'getReview']);
             Route::post('/requests/{id}/review', [CustomerRequestController::class, 'storeReview']);
         });
@@ -99,8 +130,9 @@ Route::prefix('v1')->group(function () {
             Route::post('/jobs/{assignmentId}/quote', [TechnicianJobController::class, 'submitQuote']);
             Route::post('/jobs/{assignmentId}/progress', [TechnicianJobController::class, 'updateProgress']);
             Route::get('/jobs/{assignmentId}/invoice', [TechnicianJobController::class, 'getInvoice']);
-            Route::post('/jobs/{assignmentId}/settle', [TechnicianJobController::class, 'settleInvoice']);
+            Route::get('/jobs/{assignmentId}/invoice/download', [TechnicianJobController::class, 'downloadInvoice']);
             Route::post('/jobs/{assignmentId}/complete', [TechnicianJobController::class, 'completeJob']);
+            Route::get('/ratings', [TechnicianJobController::class, 'getRatingSummary']);
         });
 
     });

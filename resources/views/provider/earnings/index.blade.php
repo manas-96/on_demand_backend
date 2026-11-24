@@ -144,7 +144,7 @@
                                 </a>
                             </td>
                             <td class="px-6 py-4 text-right text-slate-400 text-xs">
-                                {{ $earning->created_at->format('M d, Y') }}
+                                {{ $earning->created_at->inDisplayTimezone()->format('M d, Y') }}
                             </td>
                         </tr>
                     @empty

@@ -20,6 +20,7 @@ class ServiceCategory extends Model
         'icon',
         'image',
         'minimum_booking_charge',
+        'tags',
         'is_active',
     ];
 
@@ -31,6 +32,7 @@ class ServiceCategory extends Model
     {
         return [
             'minimum_booking_charge' => 'decimal:2',
+            'tags' => 'array',
             'is_active' => 'boolean',
         ];
     }

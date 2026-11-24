@@ -20,7 +20,10 @@ class AdminServiceController extends Controller
         $query = ServiceCategory::parents()->withCount('subcategories');
 
         if ($search = $request->get('search')) {
-            $query->where('name', 'like', "%{$search}%");
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('tags', 'like', "%{$search}%");
+            });
         }
 
         $categories = $query->latest()->paginate(15);
@@ -58,6 +61,7 @@ class AdminServiceController extends Controller
             'name' => ['required', 'string', 'max:255', 'unique:service_categories,name'],
             'parent_id' => ['nullable', 'exists:service_categories,id'],
             'minimum_booking_charge' => ['nullable', 'numeric', 'min:0'],
+            'tags' => ['nullable'],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,webp,svg', 'max:2048'],
             'image_url' => ['nullable', 'string', 'max:500'],
         ]);
@@ -70,12 +74,14 @@ class AdminServiceController extends Controller
         }
 
         $slug = Str::slug($validated['name']);
+        $tags = $this->parseTags($request->input('tags'));
 
         $category = ServiceCategory::create([
             'name' => $validated['name'],
             'slug' => $slug,
             'parent_id' => $validated['parent_id'] ?? null,
             'minimum_booking_charge' => $validated['minimum_booking_charge'] ?? 0.00,
+            'tags' => $tags,
             'image' => $imagePath,
             'is_active' => true,
         ]);
@@ -120,6 +126,7 @@ class AdminServiceController extends Controller
             'name' => ['required', 'string', 'max:255', 'unique:service_categories,name,'.$id],
             'parent_id' => ['nullable', 'exists:service_categories,id'],
             'minimum_booking_charge' => ['nullable', 'numeric', 'min:0'],
+            'tags' => ['nullable'],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,webp,svg', 'max:2048'],
             'image_url' => ['nullable', 'string', 'max:500'],
         ]);
@@ -131,11 +138,14 @@ class AdminServiceController extends Controller
             $imagePath = $request->input('image_url');
         }
 
+        $tags = $this->parseTags($request->input('tags'));
+
         $category->update([
             'name' => $validated['name'],
             'slug' => Str::slug($validated['name']),
             'parent_id' => $validated['parent_id'] ?? null,
             'minimum_booking_charge' => $validated['minimum_booking_charge'] ?? 0.00,
+            'tags' => $tags,
             'image' => $imagePath,
         ]);
 
@@ -145,6 +155,32 @@ class AdminServiceController extends Controller
 
         return redirect($redirectRoute)
             ->with('success', "'{$category->name}' updated successfully.");
+    }
+
+    /**
+     * Parse a comma-separated tags string or array into a clean unique list of tags.
+     *
+     * @return array<int, string>
+     */
+    private function parseTags(mixed $tagsInput): array
+    {
+        if (is_array($tagsInput)) {
+            $rawList = $tagsInput;
+        } elseif (is_string($tagsInput) && trim($tagsInput) !== '') {
+            $rawList = explode(',', $tagsInput);
+        } else {
+            return [];
+        }
+
+        $cleaned = [];
+        foreach ($rawList as $tag) {
+            $trimmed = strtolower(trim((string) $tag));
+            if ($trimmed !== '' && ! in_array($trimmed, $cleaned, true)) {
+                $cleaned[] = $trimmed;
+            }
+        }
+
+        return $cleaned;
     }
 
     /**

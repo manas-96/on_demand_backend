@@ -19,7 +19,11 @@ Welcome to the official RESTful API documentation for the On-Demand Service Plat
    - [POST /api/v1/customer/bids/{bidId}/negotiate](#post-apiv1customerbidsbididnegotiate)
    - [POST /api/v1/customer/bids/{bidId}/select](#post-apiv1customerbidsbididselect)
    - [POST /api/v1/customer/quotes/{quoteId}/approve](#post-apiv1customerquotesquoteidapprove)
-   - [POST /api/v1/customer/invoices/{invoiceId}/pay](#post-apiv1customerinvoicesinvoiceidpay)
+   - [Two-phase payments (Stripe)](#two-phase-payments-stripe)
+   - [POST /api/v1/customer/requests/{id}/payment-intent](#post-apiv1customerrequestsidpayment-intent)
+   - [POST /api/v1/customer/requests/{id}/payment-confirm](#post-apiv1customerrequestsidpayment-confirm)
+   - [GET /api/v1/customer/requests/{id}/payment-summary](#get-apiv1customerrequestsidpayment-summary)
+   - [POST /api/v1/stripe/webhook](#post-apiv1stripewebhook)
 4. [Service Provider APIs](#4-service-provider-apis)
    - [GET /api/v1/provider/requests](#get-apiv1providerrequests)
    - [POST /api/v1/provider/requests/{requestId}/bid](#post-apiv1providerrequestsrequestidbid)
@@ -56,6 +60,13 @@ Accept: application/json
 ```
 
 ---
+
+
+### Timezones
+- All timestamps in responses are **UTC**, ISO 8601 (e.g. `2026-11-04T23:00:00+00:00`). Apps convert them to the device zone for display.
+- `preferred_date` (`YYYY-MM-DD`) and `preferred_start_time` / `preferred_end_time` (`HH:MM`) are the customer's **local wall-clock** values and are never converted.
+- Apps send `X-Timezone: <IANA zone>` (e.g. `America/Chicago`) on every request. The backend uses it for "today" / "this week" filters and saves it as the booking's `timezone` when a request is created (an explicit `timezone` field in `POST /customer/requests` wins). Unknown values are ignored.
+- Business rules for a booking (e.g. technician assignment unlocking on `preferred_date`) use the booking's `timezone`. Web panels, emails and PDFs use `DISPLAY_TIMEZONE` (default `America/New_York`).
 
 ## 2. Authentication APIs
 
@@ -189,6 +200,7 @@ Accept: application/json
 
 ### POST `/api/v1/customer/requests`
 - **Scenario**: Customer selects a service category and specifies job requirements (address, description, date/time) to broadcast a job request or target a specific provider directly.
+- **Deposit**: The request is created with status `pending_payment` and a server-computed `deposit_amount` (the sub-category / category minimum booking charge). It is **not** sent to providers until the deposit is paid via [`payment-intent`](#post-apiv1customerrequestsidpayment-intent) with `type: "deposit"`.
 - **Headers**: `Authorization: Bearer <TOKEN>`, `Accept: application/json`
 - **Payload Schema**:
   - `service_category_id` *(integer, required)*: Valid category ID from `service_categories` table.
@@ -203,6 +215,7 @@ Accept: application/json
   - `preferred_start_time` *(string, optional, format: HH:MM)*: Window start time.
   - `preferred_end_time` *(string, optional, format: HH:MM)*: Window end time.
   - `priority` *(string, optional, in: low, normal, high, urgent)*: Priority level.
+  - `timezone` *(string, optional, IANA zone e.g. `America/Chicago`)*: Customer's zone. Defaults to the `X-Timezone` header, then `DISPLAY_TIMEZONE`.
 - **Request Example**:
 ```json
 {
@@ -223,7 +236,7 @@ Accept: application/json
 ```json
 {
   "success": true,
-  "message": "Service request created successfully.",
+  "message": "Service request created. Pay the booking deposit to confirm it.",
   "data": {
     "id": 12,
     "request_number": "SR-20260905-8812",
@@ -245,11 +258,20 @@ Accept: application/json
     "longitude": 77.209,
     "preferred_date": "2026-09-06",
     "priority": "normal",
-    "status": "submitted",
+    "status": "pending_payment",
+    "payment_status": "deposit_pending",
+    "deposit_amount": 50.0,
+    "deposit_paid": false,
+    "deposit_paid_at": null,
+    "upfront_deposit_paid": 0.0,
+    "invoice_id": null,
+    "invoice_total": null,
+    "balance_due": 0.0,
     "created_at": "2026-09-05T00:00:00.000000Z"
   }
 }
 ```
+- **Payment fields on every ServiceRequest resource**: `payment_status` is `deposit_pending` → `deposit_paid` → `paid`. `upfront_deposit_paid` is the deposit actually collected (0 until paid). `balance_due` is invoice total (excluding tip) minus the paid deposit.
 - **Validation Error Response (`422 Unprocessable Content`)**:
 ```json
 {
@@ -412,39 +434,105 @@ Accept: application/json
 
 ---
 
-### POST `/api/v1/customer/invoices/{invoiceId}/pay`
-- **Scenario**: Customer pays an issued job invoice via payment gateway. Automatically updates invoice status to `'paid'`, service request status to `'completed'`, and records provider earnings.
+### Two-phase payments (Stripe)
+Customers pay online only (no cash). Every amount is computed by the backend; the app never sends an amount.
+
+| Phase | When | Amount |
+|---|---|---|
+| `deposit` | Right after `POST /customer/requests` | `deposit_amount` (category minimum booking charge) |
+| `balance` | After the technician completes the job (invoice issued) | invoice total − deposit paid + optional tip |
+
+Flow for each phase:
+1. `POST /customer/requests/{id}/payment-intent` → returns a Stripe `client_secret` and `publishable_key`.
+2. App presents the Stripe PaymentSheet with that `client_secret`.
+3. `POST /customer/requests/{id}/payment-confirm` with the `payment_intent_id`. The backend re-fetches the PaymentIntent from Stripe and applies it. The Stripe webhook applies the same result independently; both are idempotent.
+
+On deposit success the request moves `pending_payment` → `submitted` and is sent to providers. On balance success the invoice becomes `paid` and provider earnings / tip are recorded.
+
+The old `POST /customer/requests/{id}/pay`, `POST /customer/invoices/{invoiceId}/pay` and technician `POST /technician/jobs/{id}/settle` endpoints were removed.
+
+---
+
+### POST `/api/v1/customer/requests/{id}/payment-intent`
 - **Headers**: `Authorization: Bearer <TOKEN>`, `Accept: application/json`
 - **Payload Schema**:
-  - `transaction_id` *(string, required)*: Payment gateway transaction reference string.
-  - `amount` *(number, required, min: 1)*: Paid amount (must match or exceed invoice total).
-  - `payment_gateway` *(string, optional, default: 'stripe')*: Payment gateway identifier.
-- **Request Example**:
-```json
-{
-  "transaction_id": "txn_3Mq1234567890",
-  "amount": 131.25,
-  "payment_gateway": "stripe"
-}
-```
+  - `type` *(string, required, in: `deposit`, `balance`)*
+  - `tip_amount` *(number, optional, min: 0; balance only)*
 - **Success Response (`200 OK`)**:
 ```json
 {
   "success": true,
-  "message": "Payment processed successfully.",
+  "message": "Payment intent ready.",
   "data": {
-    "id": 7,
-    "invoice_id": 2,
-    "customer_id": 5,
-    "payment_gateway": "stripe",
-    "transaction_id": "txn_3Mq1234567890",
-    "amount": "131.25",
-    "status": "successful",
-    "paid_at": "2026-09-05T00:05:00.000000Z",
-    "created_at": "2026-09-05T00:05:00.000000Z"
+    "requires_payment": true,
+    "gateway": "stripe",
+    "payment_type": "balance",
+    "payment_id": 14,
+    "payment_intent_id": "pi_3QabcXYZ",
+    "client_secret": "pi_3QabcXYZ_secret_123",
+    "publishable_key": "pk_live_...",
+    "amount": 160.0,
+    "currency": "usd",
+    "breakdown": { "invoice_id": 9, "balance_due": 150.0, "tip_amount": 10.0 },
+    "service_request_id": 12
   }
 }
 ```
+- Calling it again for the same amount reuses the open PaymentIntent; a different tip cancels the old one and creates a new one.
+- If the deposit already covers the invoice and no tip is added, `requires_payment` is `false`, the invoice is marked paid, and the payment summary fields are returned instead.
+- **Errors (`422`)**: deposit already paid, request not in `pending_payment`, balance requested before the job is completed, or already paid in full.
+
+---
+
+### POST `/api/v1/customer/requests/{id}/payment-confirm`
+- **Payload Schema**: `payment_intent_id` *(string, required)*
+- **Success Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "message": "Deposit received. Your request has been sent to providers.",
+  "data": {
+    "payment_id": 13,
+    "payment_type": "deposit",
+    "amount": 50.0,
+    "summary": { "...": "same shape as payment-summary" }
+  }
+}
+```
+- **`409 Conflict`**: the PaymentIntent has not succeeded yet (e.g. the sheet was closed or 3-D Secure is still pending). Retry or poll `payment-summary`.
+
+---
+
+### GET `/api/v1/customer/requests/{id}/payment-summary`
+```json
+{
+  "success": true,
+  "data": {
+    "service_request_id": 12,
+    "currency": "usd",
+    "deposit_amount": 50.0,
+    "deposit_paid": true,
+    "deposit_paid_at": "2026-11-24T10:00:00+00:00",
+    "invoice_id": 9,
+    "invoice_total": 200.0,
+    "balance_due": 150.0,
+    "can_pay_balance": true,
+    "is_paid": false,
+    "payment_status": "deposit_paid"
+  }
+}
+```
+
+---
+
+### POST `/api/v1/stripe/webhook`
+- Public endpoint for Stripe, verified with the `Stripe-Signature` header (`STRIPE_WEBHOOK_SECRET`). Handles `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.canceled`. Responds `400` for an invalid signature.
+- Backend env: `STRIPE_KEY`, `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CURRENCY` (default `usd`).
+
+#### Fake payment mode (development, before a Stripe account exists)
+- `PAYMENT_DRIVER=fake` makes every PaymentIntent succeed instantly with no Stripe keys. `payment-intent` returns `"gateway": "fake"` and `publishable_key: null`; the app skips the payment sheet and calls `payment-confirm` directly. Payment rows are stored with `payment_gateway = "fake"`.
+- Refused when `APP_ENV=production` unless `PAYMENT_ALLOW_FAKE_IN_PRODUCTION=true` (only for a non-public test server).
+- Switch to real payments with `PAYMENT_DRIVER=stripe` plus the `STRIPE_*` keys; no app changes needed.
 
 ---
 
@@ -812,7 +900,7 @@ Accept: application/json
 ---
 
 ### POST `/api/v1/technician/jobs/{assignmentId}/complete`
-- **Scenario**: Technician completes job execution on-site and marks assignment as completed.
+- **Scenario**: Technician completes job execution on-site and marks assignment as completed. The final invoice is issued at this point so the customer can pay the remaining balance in the app. `GET /technician/jobs/{assignmentId}/invoice` now also returns `deposit_paid`, `balance_due`, `is_paid` and `payment_status` (`awaiting_customer_payment` | `paid`); technicians do not collect payment.
 - **Headers**: `Authorization: Bearer <TOKEN>`, `Accept: application/json`
 - **Payload**: *None*
 - **Success Response (`200 OK`)**:

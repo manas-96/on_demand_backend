@@ -57,6 +57,13 @@
             </div>
 
             <div>
+                <label for="tags" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Search Tags (Comma-Separated)</label>
+                <input type="text" id="tags" name="tags" value="{{ old('tags', is_array($category->tags) ? implode(', ', $category->tags) : '') }}" placeholder="e.g. pipe, leak, tap, basin, plumber" 
+                       class="w-full bg-slate-950 border border-slate-800 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-amber-400 transition">
+                <p class="text-[11px] text-slate-500 mt-1">Keywords or search tags that customers can search in the mobile app to find this category.</p>
+            </div>
+
+            <div>
                 <label for="image" class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Category Image Upload</label>
                 @if($category->image_url)
                     <div class="mb-3 flex items-center space-x-3 bg-slate-950 p-2 rounded-xl border border-slate-800">

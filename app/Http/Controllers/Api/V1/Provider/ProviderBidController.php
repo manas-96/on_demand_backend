@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Provider;
 
 use App\Enums\JobAssignmentStatus;
+use App\Enums\NotificationType;
 use App\Enums\ProviderJobRequestStatus;
 use App\Enums\ServiceRequestStatus;
 use App\Http\Controllers\Controller;
@@ -16,7 +17,10 @@ use App\Models\ProviderJobRequest;
 use App\Models\Quote;
 use App\Models\ServiceRequest;
 use App\Models\TechnicianProfile;
+use App\Models\User;
 use App\Services\Bidding\BiddingService;
+use App\Services\EmailNotificationService;
+use App\Services\PushNotificationService;
 use App\Services\Quote\QuoteService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -75,6 +79,15 @@ class ProviderBidController extends Controller
     {
         $provider = $request->user();
         $serviceRequest = ServiceRequest::findOrFail($requestId);
+
+        if (! $serviceRequest->isTechnicianAssignmentAllowed()) {
+            return response()->json([
+                'success' => false,
+                'message' => "Technician assignment is locked until the scheduled booking date ({$serviceRequest->preferred_date->format('Y-m-d')}).",
+                'unlock_date' => $serviceRequest->preferred_date->format('Y-m-d'),
+            ], 422);
+        }
+
         $technicianId = $request->technician_id;
 
         // Mandatory Rule 3: Validate technician belongs to this provider
@@ -102,6 +115,48 @@ class ProviderBidController extends Controller
         ProviderJobRequest::where('service_request_id', $serviceRequest->id)
             ->where('provider_id', $provider->id)
             ->update(['status' => ProviderJobRequestStatus::Selected]);
+
+        // Customer Notification
+        app(PushNotificationService::class)->send(
+            userId: $serviceRequest->customer_id,
+            title: 'Technician Assigned',
+            body: 'A technician has been assigned to your service request.',
+            type: NotificationType::Booking->value,
+            data: [
+                'type' => 'booking',
+                'booking_id' => $serviceRequest->request_number,
+                'screen' => 'booking_details',
+            ],
+            eventId: $serviceRequest->request_number.'_tech_assigned_cust_'.$technicianId
+        );
+
+        // Technician Notification
+        app(PushNotificationService::class)->send(
+            userId: $technicianId,
+            title: 'New Job Assignment',
+            body: 'You have been assigned to a new service request.',
+            type: NotificationType::Booking->value,
+            data: [
+                'type' => 'booking',
+                'booking_id' => $serviceRequest->request_number,
+                'screen' => 'booking_details',
+            ],
+            eventId: $serviceRequest->request_number.'_tech_assigned_tech_'.$technicianId
+        );
+
+        $techUser = $techProfile?->user ?? User::find($technicianId);
+
+        app(EmailNotificationService::class)->sendRequestAcceptedOrAssignedToCustomer(
+            $serviceRequest,
+            $provider,
+            $techUser
+        );
+
+        app(EmailNotificationService::class)->sendTechnicianAssignedToTechnician(
+            $serviceRequest,
+            $techUser,
+            $provider
+        );
 
         return response()->json([
             'success' => true,

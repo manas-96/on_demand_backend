@@ -11,6 +11,23 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Deduplicate any non-unique phones before adding unique constraint
+        $duplicates = DB::table('users')
+            ->select('phone')
+            ->whereNotNull('phone')
+            ->groupBy('phone')
+            ->havingRaw('COUNT(*) > 1')
+            ->pluck('phone');
+
+        foreach ($duplicates as $dupPhone) {
+            $users = DB::table('users')->where('phone', $dupPhone)->orderBy('id')->get();
+            foreach ($users->slice(1) as $user) {
+                DB::table('users')->where('id', $user->id)->update([
+                    'phone' => $dupPhone.'-dup-'.$user->id,
+                ]);
+            }
+        }
+
         Schema::table('users', function (Blueprint $table) {
             $table->unique('phone');
         });

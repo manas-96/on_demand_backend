@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Enums\ServiceRequestStatus;
 use App\Enums\UserRole;
+use App\Models\ProviderJobRequest;
+use App\Models\ProviderProfile;
 use App\Models\ServiceCategory;
 use App\Models\ServiceRequest;
 use App\Models\User;
@@ -163,34 +165,84 @@ class CustomerRequestApiTest extends TestCase
         $response->assertHeader('content-type', 'application/pdf');
     }
 
-    public function test_customer_can_pay_for_service_request(): void
+    public function test_authenticated_user_can_create_service_request(): void
     {
-        $request = ServiceRequest::create([
-            'request_number' => 'SR-PAY-001',
+        $technicianUser = User::factory()->create([
+            'role' => UserRole::Technician,
+        ]);
+
+        $payload = [
+            'service_category_id' => $this->category->id,
+            'request_type' => 'broadcast',
+            'description' => 'Fix leaking pipe in bathroom',
+            'address_line' => '456 Tech Lane',
+            'latitude' => 23.5204,
+            'longitude' => 87.3119,
+            'preferred_date' => now()->addDay()->toDateString(),
+            'preferred_start_time' => '10:00',
+            'priority' => 'normal',
+        ];
+
+        $response = $this->actingAs($technicianUser, 'sanctum')
+            ->postJson('/api/v1/customer/requests', $payload);
+
+        $response->assertStatus(201)
+            ->assertJson([
+                'success' => true,
+                'message' => 'Service request created. Pay the booking deposit to confirm it.',
+            ])
+            ->assertJsonPath('data.customer_id', $technicianUser->id)
+            ->assertJsonPath('data.status', ServiceRequestStatus::PendingPayment->value);
+
+        $this->assertDatabaseHas('service_requests', [
+            'customer_id' => $technicianUser->id,
+            'description' => 'Fix leaking pipe in bathroom',
+        ]);
+    }
+
+    public function test_awarded_service_request_resolves_provider_and_company_name(): void
+    {
+        $providerUser = User::factory()->create([
+            'name' => 'John Provider',
+            'role' => UserRole::Provider,
+        ]);
+        $profile = ProviderProfile::create([
+            'user_id' => $providerUser->id,
+            'company_name' => 'Acme Services',
+            'business_type' => 'company',
+            'is_verified' => true,
+        ]);
+
+        $sr = ServiceRequest::create([
+            'request_number' => 'SR-AWARDED-001',
             'customer_id' => $this->customer->id,
             'service_category_id' => $this->category->id,
             'request_type' => 'broadcast',
-            'description' => 'Payment Test',
-            'address_line' => '123 Main St',
+            'description' => 'Awarded Request Test',
+            'address_line' => '789 Elm St',
             'latitude' => 28.6139,
             'longitude' => 77.2090,
             'preferred_date' => now()->toDateString(),
-            'status' => ServiceRequestStatus::Completed,
+            'status' => ServiceRequestStatus::Awarded,
+        ]);
+
+        ProviderJobRequest::create([
+            'service_request_id' => $sr->id,
+            'provider_id' => $providerUser->id,
+            'provider_profile_id' => $profile->id,
+            'status' => 'selected',
         ]);
 
         $response = $this->actingAs($this->customer, 'sanctum')
-            ->postJson("/api/v1/customer/requests/{$request->id}/pay", [
-                'payment_method' => 'card',
-                'amount' => 150.00,
-            ]);
+            ->getJson("/api/v1/customer/requests/{$sr->id}");
 
         $response->assertStatus(200)
-            ->assertJson([
-                'success' => true,
-                'message' => 'Payment processed and settled successfully.',
-                'data' => [
-                    'is_paid' => true,
-                ],
-            ]);
+            ->assertJsonPath('data.status', 'awarded')
+            ->assertJsonPath('data.provider_id', $providerUser->id)
+            ->assertJsonPath('data.provider_name', 'John Provider')
+            ->assertJsonPath('data.company_name', 'Acme Services')
+            ->assertJsonPath('data.provider_rating', null)
+            ->assertJsonPath('data.provider_completed_jobs', '0 jobs')
+            ->assertJsonPath('data.technician_name', null);
     }
 }

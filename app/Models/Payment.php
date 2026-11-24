@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\PaymentStatus;
+use App\Enums\PaymentType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,10 +14,13 @@ class Payment extends Model
 
     protected $fillable = [
         'invoice_id',
+        'service_request_id',
+        'type',
         'customer_id',
         'payment_gateway',
         'transaction_id',
         'amount',
+        'currency',
         'status',
         'payment_details',
         'paid_at',
@@ -27,6 +31,7 @@ class Payment extends Model
         return [
             'amount' => 'decimal:2',
             'status' => PaymentStatus::class,
+            'type' => PaymentType::class,
             'payment_details' => 'array',
             'paid_at' => 'datetime',
         ];
@@ -35,6 +40,11 @@ class Payment extends Model
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class);
+    }
+
+    public function serviceRequest(): BelongsTo
+    {
+        return $this->belongsTo(ServiceRequest::class);
     }
 
     public function customer(): BelongsTo
