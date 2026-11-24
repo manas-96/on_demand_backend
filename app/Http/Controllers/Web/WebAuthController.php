@@ -37,14 +37,29 @@ class WebAuthController extends Controller
         ]);
 
         if (Auth::attempt($credentials, $request->boolean('remember'))) {
-            $request->session()->regenerate();
-
             $user = Auth::user();
+
+            $refusal = match (true) {
+                ! $user->is_active => 'Your account has been deactivated. Please contact support.',
+                ! $user->isAdmin() && ! $user->isProvider() => 'This web panel is for providers and admins. Please sign in with the Grab A Hand mobile app.',
+                default => null,
+            };
+
+            if ($refusal) {
+                Auth::guard('web')->logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+
+                return back()->withErrors(['email' => $refusal])->onlyInput('email');
+            }
+
+            $request->session()->regenerate();
 
             if ($user->isAdmin()) {
                 return redirect()->intended('/admin');
             }
 
+            // Unverified / unapproved providers are routed to onboarding by EnsureProviderIsOnboarded.
             return redirect()->intended('/provider');
         }
 
