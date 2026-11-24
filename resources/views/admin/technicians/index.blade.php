@@ -14,7 +14,7 @@
     <!-- Filter/Search Bar -->
     <div class="p-4 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
         <form method="GET" action="{{ route('admin.technicians.index') }}" class="flex items-center space-x-3 w-full max-w-md">
-            <input type="text" name="search" value="{{ request('search') }}" placeholder="Search technician name or email..." 
+            <input type="text" name="search" value="{{ request('search') }}" placeholder="Search technician, email or provider name..." 
                 class="w-full px-4 py-2 rounded-lg bg-slate-950 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold">Search</button>
         </form>
@@ -39,7 +39,10 @@
                             <div class="text-xs text-slate-400">{{ $tech->user->email }} • {{ $tech->user->phone ?? 'No Phone' }}</div>
                         </td>
                         <td class="px-6 py-4 font-medium text-slate-200">
-                            {{ $tech->provider->name ?? 'Provider Org' }}
+                            <div>{{ $tech->providerProfile->company_name ?? $tech->provider->name ?? 'Provider Org' }}</div>
+                            @if(isset($tech->providerProfile->company_name) && isset($tech->provider->name) && $tech->providerProfile->company_name !== $tech->provider->name)
+                                <div class="text-xs text-slate-400">{{ $tech->provider->name }}</div>
+                            @endif
                         </td>
                         <td class="px-6 py-4 text-xs text-slate-400">
                             {{ $tech->qualification ?? 'General Technician' }}

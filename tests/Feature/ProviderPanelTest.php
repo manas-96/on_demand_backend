@@ -9,6 +9,8 @@ use App\Enums\ServiceRequestStatus;
 use App\Enums\UserRole;
 use App\Models\Invoice;
 use App\Models\JobAssignment;
+use App\Models\JobInspection;
+use App\Models\JobProgress;
 use App\Models\ProviderEarning;
 use App\Models\ProviderJobRequest;
 use App\Models\ProviderProfile;
@@ -616,5 +618,375 @@ class ProviderPanelTest extends TestCase
         $response->assertSee('$2,100.00'); // Grand Total
         $response->assertSee('-$220.00');  // Admin Commission (11% of $2000)
         $response->assertSee('$1,900.00'); // Total Payable to Provider
+    }
+
+    public function test_provider_request_details_displays_pre_work_and_post_work_photos_and_details(): void
+    {
+        $serviceRequest = ServiceRequest::create([
+            'customer_id' => $this->customer->id,
+            'request_number' => 'SR-PHOTOS-101',
+            'status' => ServiceRequestStatus::InProgress,
+            'description' => 'Fix leaking pipe and restore dry wall',
+            'address_line' => '456 Oak Avenue',
+            'latitude' => 40.7128,
+            'longitude' => -74.0060,
+            'preferred_date' => now()->toDateString(),
+        ]);
+
+        $jobRequest = ProviderJobRequest::create([
+            'provider_id' => $this->providerA->id,
+            'provider_profile_id' => $this->profileA->id,
+            'service_request_id' => $serviceRequest->id,
+            'status' => ProviderJobRequestStatus::Selected,
+        ]);
+
+        $techUser = User::factory()->create([
+            'role' => UserRole::Technician,
+            'name' => 'Alex MasterTech',
+        ]);
+
+        TechnicianProfile::create([
+            'user_id' => $techUser->id,
+            'provider_id' => $this->providerA->id,
+            'is_approved' => true,
+            'is_active' => true,
+        ]);
+
+        $assignment = JobAssignment::create([
+            'service_request_id' => $serviceRequest->id,
+            'provider_id' => $this->providerA->id,
+            'technician_id' => $techUser->id,
+            'status' => JobAssignmentStatus::InProgress,
+            'assigned_at' => now(),
+        ]);
+
+        JobInspection::create([
+            'service_request_id' => $serviceRequest->id,
+            'job_assignment_id' => $assignment->id,
+            'technician_id' => $techUser->id,
+            'technical_notes' => 'Found severe pipe corrosion behind main drywall',
+            'estimated_labor_hours' => 2.50,
+            'estimated_material_cost' => 150.00,
+            'photos' => ['inspections/sample1.jpg', 'inspections/sample2.jpg'],
+        ]);
+
+        JobProgress::create([
+            'service_request_id' => $serviceRequest->id,
+            'technician_id' => $techUser->id,
+            'progress_percentage' => 100,
+            'description' => 'Replaced corroded PVC section successfully',
+            'photos' => ['completion/finish1.jpg'],
+        ]);
+
+        $response = $this->actingAs($this->providerA)
+            ->get("/provider/requests/{$jobRequest->id}");
+
+        $response->assertStatus(200);
+        $response->assertSee('Pre-Work Inspection Photos & Findings', false);
+        $response->assertSee('Alex MasterTech');
+        $response->assertSee('Found severe pipe corrosion behind main drywall');
+        $response->assertSee('2.50 hrs');
+        $response->assertSee('$150.00');
+        $response->assertSee('storage/inspections/sample1.jpg');
+        $response->assertSee('storage/inspections/sample2.jpg');
+        $response->assertSee('Post-Work Proof Photos & Progress Updates', false);
+        $response->assertSee('100% Completed');
+        $response->assertSee('Replaced corroded PVC section successfully');
+        $response->assertSee('storage/completion/finish1.jpg');
+    }
+
+    public function test_provider_can_send_chat_message_via_backend_endpoint(): void
+    {
+        $serviceRequest = ServiceRequest::create([
+            'customer_id' => $this->customer->id,
+            'request_number' => 'SR-CHAT-SEND-01',
+            'status' => ServiceRequestStatus::Assigned,
+            'description' => 'Chat test request',
+            'address_line' => '789 Pine Road',
+            'latitude' => 40.7128,
+            'longitude' => -74.0060,
+            'preferred_date' => now()->toDateString(),
+        ]);
+
+        $jobRequest = ProviderJobRequest::create([
+            'provider_id' => $this->providerA->id,
+            'provider_profile_id' => $this->profileA->id,
+            'service_request_id' => $serviceRequest->id,
+            'status' => ProviderJobRequestStatus::Selected,
+        ]);
+
+        // Authorized provider send via jobRequest id
+        $response = $this->actingAs($this->providerA)
+            ->postJson("/provider/requests/{$jobRequest->id}/chat-send", [
+                'message' => 'Hello customer, I am on my way!',
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'message' => 'Chat message sent successfully.',
+            ]);
+
+        // Authorized provider send via serviceRequest id
+        $responseViaServiceId = $this->actingAs($this->providerA)
+            ->postJson("/provider/requests/{$serviceRequest->id}/chat-send", [
+                'message' => 'Follow up message using service request id',
+            ]);
+
+        $responseViaServiceId->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'message' => 'Chat message sent successfully.',
+            ]);
+
+        // Validation failure
+        $emptyResponse = $this->actingAs($this->providerA)
+            ->postJson("/provider/requests/{$jobRequest->id}/chat-send", [
+                'message' => '',
+            ]);
+
+        $emptyResponse->assertStatus(422);
+
+        // Unauthorized provider B cannot send on provider A's request
+        $unauthorizedResponse = $this->actingAs($this->providerB)
+            ->postJson("/provider/requests/{$jobRequest->id}/chat-send", [
+                'message' => 'Unauthorized message attempt',
+            ]);
+
+        $unauthorizedResponse->assertStatus(404);
+    }
+
+    public function test_provider_can_view_chat_modal_even_without_technician_assignment(): void
+    {
+        $serviceRequest = ServiceRequest::create([
+            'customer_id' => $this->customer->id,
+            'request_number' => 'SR-CHAT-NOTECH-01',
+            'status' => ServiceRequestStatus::Awarded,
+            'description' => 'Accepted job without technician',
+            'address_line' => '101 Oak Lane',
+            'latitude' => 12.9716,
+            'longitude' => 77.5946,
+            'preferred_date' => now()->addDays(2)->toDateString(),
+        ]);
+
+        $jobRequest = ProviderJobRequest::create([
+            'provider_id' => $this->providerA->id,
+            'provider_profile_id' => $this->profileA->id,
+            'service_request_id' => $serviceRequest->id,
+            'status' => ProviderJobRequestStatus::Selected,
+        ]);
+
+        $response = $this->actingAs($this->providerA)
+            ->get("/provider/requests/{$jobRequest->id}");
+
+        $response->assertStatus(200);
+        $response->assertSee('Customer Chat 💬');
+        $response->assertSee('id="customer-chat-modal"', false);
+        $response->assertSee('id="chat-send-form"', false);
+    }
+
+    public function test_provider_cannot_assign_technician_to_future_date_booking_in_web_panel(): void
+    {
+        $techUser = User::factory()->create(['role' => UserRole::Technician, 'name' => 'Tech Dave']);
+        TechnicianProfile::create([
+            'user_id' => $techUser->id,
+            'provider_id' => $this->providerA->id,
+            'provider_profile_id' => $this->profileA->id,
+            'is_active' => true,
+            'is_approved' => true,
+        ]);
+
+        $futureDate = now()->addDays(3);
+        $serviceRequest = ServiceRequest::create([
+            'request_number' => 'SR-FUTURE-001',
+            'customer_id' => $this->customer->id,
+            'description' => 'Future installation job',
+            'address_line' => '123 Future Way',
+            'latitude' => 12.9716,
+            'longitude' => 77.5946,
+            'preferred_date' => $futureDate->toDateString(),
+            'request_type' => 'broadcast',
+            'status' => ServiceRequestStatus::Awarded,
+        ]);
+
+        $jobRequest = ProviderJobRequest::create([
+            'service_request_id' => $serviceRequest->id,
+            'provider_id' => $this->providerA->id,
+            'provider_profile_id' => $this->profileA->id,
+            'status' => ProviderJobRequestStatus::Selected,
+            'sent_at' => now(),
+        ]);
+
+        // Attempt assigning technician via Web Panel
+        $response = $this->actingAs($this->providerA)
+            ->post("/provider/requests/{$jobRequest->id}/assign-technician", [
+                'technician_id' => $techUser->id,
+            ]);
+
+        $response->assertSessionHas('error');
+        $this->assertStringContainsString('locked until the scheduled booking date', session('error'));
+        $this->assertDatabaseMissing('job_assignments', [
+            'service_request_id' => $serviceRequest->id,
+            'technician_id' => $techUser->id,
+        ]);
+
+        // Verify show page displays lock banner
+        $showResponse = $this->actingAs($this->providerA)->get("/provider/requests/{$jobRequest->id}");
+        $showResponse->assertStatus(200);
+        $showResponse->assertSee('Assignment Locked Until Scheduled Date');
+    }
+
+    public function test_provider_can_assign_technician_to_same_day_booking_in_web_panel(): void
+    {
+        $techUser = User::factory()->create(['role' => UserRole::Technician, 'name' => 'Tech Dave']);
+        TechnicianProfile::create([
+            'user_id' => $techUser->id,
+            'provider_id' => $this->providerA->id,
+            'provider_profile_id' => $this->profileA->id,
+            'is_active' => true,
+            'is_approved' => true,
+        ]);
+
+        $serviceRequest = ServiceRequest::create([
+            'request_number' => 'SR-TODAY-001',
+            'customer_id' => $this->customer->id,
+            'description' => 'Today emergency job',
+            'address_line' => '456 Today St',
+            'latitude' => 12.9716,
+            'longitude' => 77.5946,
+            'preferred_date' => today()->toDateString(),
+            'request_type' => 'broadcast',
+            'status' => ServiceRequestStatus::Awarded,
+        ]);
+
+        $jobRequest = ProviderJobRequest::create([
+            'service_request_id' => $serviceRequest->id,
+            'provider_id' => $this->providerA->id,
+            'provider_profile_id' => $this->profileA->id,
+            'status' => ProviderJobRequestStatus::Selected,
+            'sent_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->providerA)
+            ->post("/provider/requests/{$jobRequest->id}/assign-technician", [
+                'technician_id' => $techUser->id,
+            ]);
+
+        $response->assertSessionHas('success', 'Technician assigned successfully.');
+        $this->assertDatabaseHas('job_assignments', [
+            'service_request_id' => $serviceRequest->id,
+            'technician_id' => $techUser->id,
+            'status' => JobAssignmentStatus::Assigned,
+        ]);
+        $this->assertEquals(ServiceRequestStatus::Assigned, $serviceRequest->fresh()->status);
+    }
+
+    public function test_provider_api_cannot_assign_technician_to_future_date_booking(): void
+    {
+        $techUser = User::factory()->create(['role' => UserRole::Technician, 'name' => 'Tech Dave']);
+        TechnicianProfile::create([
+            'user_id' => $techUser->id,
+            'provider_id' => $this->providerA->id,
+            'provider_profile_id' => $this->profileA->id,
+            'is_active' => true,
+            'is_approved' => true,
+        ]);
+
+        $futureDate = now()->addDays(5);
+        $serviceRequest = ServiceRequest::create([
+            'request_number' => 'SR-FUTURE-API-001',
+            'customer_id' => $this->customer->id,
+            'description' => 'Future API job',
+            'address_line' => '789 Future Ave',
+            'latitude' => 12.9716,
+            'longitude' => 77.5946,
+            'preferred_date' => $futureDate->toDateString(),
+            'request_type' => 'broadcast',
+            'status' => ServiceRequestStatus::Awarded,
+        ]);
+
+        $response = $this->actingAs($this->providerA)
+            ->postJson("/api/v1/provider/requests/{$serviceRequest->id}/assign-technician", [
+                'technician_id' => $techUser->id,
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJson([
+                'success' => false,
+                'unlock_date' => $futureDate->toDateString(),
+            ]);
+
+        $this->assertDatabaseMissing('job_assignments', [
+            'service_request_id' => $serviceRequest->id,
+        ]);
+    }
+
+    public function test_provider_api_can_assign_technician_to_same_day_booking(): void
+    {
+        $techUser = User::factory()->create(['role' => UserRole::Technician, 'name' => 'Tech Dave']);
+        TechnicianProfile::create([
+            'user_id' => $techUser->id,
+            'provider_id' => $this->providerA->id,
+            'provider_profile_id' => $this->profileA->id,
+            'is_active' => true,
+            'is_approved' => true,
+        ]);
+
+        $serviceRequest = ServiceRequest::create([
+            'request_number' => 'SR-TODAY-API-001',
+            'customer_id' => $this->customer->id,
+            'description' => 'Today API job',
+            'address_line' => '789 Today Ave',
+            'latitude' => 12.9716,
+            'longitude' => 77.5946,
+            'preferred_date' => today()->toDateString(),
+            'request_type' => 'broadcast',
+            'status' => ServiceRequestStatus::Awarded,
+        ]);
+
+        $response = $this->actingAs($this->providerA)
+            ->postJson("/api/v1/provider/requests/{$serviceRequest->id}/assign-technician", [
+                'technician_id' => $techUser->id,
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'message' => 'Technician assigned successfully.',
+            ]);
+
+        $this->assertDatabaseHas('job_assignments', [
+            'service_request_id' => $serviceRequest->id,
+            'technician_id' => $techUser->id,
+        ]);
+    }
+
+    public function test_provider_can_access_support_helpdesk_page(): void
+    {
+        $response = $this->actingAs($this->providerA)
+            ->get('/provider/support');
+
+        $response->assertStatus(200);
+        $response->assertSee('Provider Support', false);
+        $response->assertSee('Open New Ticket');
+    }
+
+    public function test_provider_can_access_support_live_chat_page(): void
+    {
+        $response = $this->actingAs($this->providerA)
+            ->get('/provider/support/TKT-TEST12345');
+
+        $response->assertStatus(200);
+        $response->assertSee('Platform Support Desk Live Chat');
+    }
+
+    public function test_non_provider_cannot_access_provider_support(): void
+    {
+        $guestResponse = $this->get('/provider/support');
+        $guestResponse->assertRedirect('/login');
+
+        $customerResponse = $this->actingAs($this->customer)
+            ->get('/provider/support');
+        $customerResponse->assertStatus(403);
     }
 }

@@ -60,7 +60,7 @@
                         <th class="px-6 py-4">Service</th>
                         <th class="px-6 py-4">Location</th>
                         <th class="px-6 py-4">Status</th>
-                        <th class="px-6 py-4">Date</th>
+                        <th class="px-6 py-4">Preferred Date</th>
                         <th class="px-6 py-4 text-right">Actions</th>
                     </tr>
                 </thead>
@@ -111,9 +111,44 @@
                                     @else bg-slate-800 text-slate-400 border border-slate-700 @endif">
                                     {{ $label }}
                                 </span>
+                                @php
+                                    $reqQuote = $req->serviceRequest?->quotes?->sortByDesc('id')->first();
+                                @endphp
+                                @if($reqQuote)
+                                    <div class="mt-1.5">
+                                        @if(! $reqQuote->is_approved_by_provider)
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/40">
+                                                ⏳ Quote Awaiting Approval (${{ number_format((float) $reqQuote->total, 2) }})
+                                            </span>
+                                        @elseif($reqQuote->status === \App\Enums\QuoteStatus::Approved || (is_string($reqQuote->status) && $reqQuote->status === 'approved'))
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                                ✓ Quote Approved (${{ number_format((float) $reqQuote->total, 2) }})
+                                            </span>
+                                        @else
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                                                Quote Sent to Customer (${{ number_format((float) $reqQuote->total, 2) }})
+                                            </span>
+                                        @endif
+                                    </div>
+                                @endif
                             </td>
-                            <td class="px-6 py-4 text-slate-400 text-xs">
-                                {{ $req->created_at->format('M d, Y H:i') }}
+                            <td class="px-6 py-4 text-slate-300 text-xs">
+                                @if($req->serviceRequest?->preferred_date)
+                                    <div class="font-bold text-white flex items-center space-x-1.5">
+                                        <svg class="w-3.5 h-3.5 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                        <span>{{ $req->serviceRequest->preferred_date->format('M d, Y') }}</span>
+                                    </div>
+                                    @if($req->serviceRequest->preferred_start_time)
+                                        <div class="text-[11px] text-amber-400/90 font-medium mt-1 pl-5">
+                                            {{ \Carbon\Carbon::parse($req->serviceRequest->preferred_start_time)->format('g:i A') }}
+                                            @if($req->serviceRequest->preferred_end_time)
+                                                - {{ \Carbon\Carbon::parse($req->serviceRequest->preferred_end_time)->format('g:i A') }}
+                                            @endif
+                                        </div>
+                                    @endif
+                                @else
+                                    <span class="text-slate-400 italic">Flexible / ASAP</span>
+                                @endif
                             </td>
                             <td class="px-6 py-4 text-right">
                                 <a href="{{ route('provider.requests.show', $req->id) }}" class="text-xs font-semibold px-3.5 py-1.5 rounded-lg border border-amber-400/30 text-amber-400 hover:bg-amber-400/10 transition">

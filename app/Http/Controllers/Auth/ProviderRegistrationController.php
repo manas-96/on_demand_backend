@@ -86,6 +86,6 @@ class ProviderRegistrationController extends Controller
 
         return redirect()
             ->route('provider.dashboard')
-            ->with('success', "Welcome to ServicePlatform! Provider account '{$validated['company_name']}' registered successfully.");
+            ->with('success', "Welcome to Grab A Hand! Provider account '{$validated['company_name']}' registered successfully.");
     }
 }

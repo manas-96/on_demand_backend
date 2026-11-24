@@ -44,6 +44,44 @@ class CustomerProviderApiTest extends TestCase
             ]);
     }
 
+    public function test_customer_can_fetch_nearest_providers_sorted_by_distance(): void
+    {
+        $customer = User::factory()->create(['role' => 'customer']);
+
+        $farProviderUser = User::factory()->create(['role' => 'provider', 'name' => 'Far Provider']);
+        ProviderProfile::create([
+            'user_id' => $farProviderUser->id,
+            'company_name' => 'Faraway Services',
+            'latitude' => 28.7041, // ~10km away
+            'longitude' => 77.1025,
+            'service_radius_km' => 50,
+            'is_approved' => true,
+            'is_accepting_jobs' => true,
+        ]);
+
+        $nearProviderUser = User::factory()->create(['role' => 'provider', 'name' => 'Near Provider']);
+        ProviderProfile::create([
+            'user_id' => $nearProviderUser->id,
+            'company_name' => 'Nearby Services',
+            'latitude' => 28.6145, // ~0.1km away
+            'longitude' => 77.2095,
+            'service_radius_km' => 25,
+            'is_approved' => true,
+            'is_accepting_jobs' => true,
+        ]);
+
+        $response = $this->actingAs($customer, 'sanctum')
+            ->getJson('/api/v1/customer/providers?latitude=28.6139&longitude=77.2090');
+
+        $response->assertStatus(200);
+
+        $data = $response->json('data');
+        $this->assertCount(2, $data);
+        $this->assertEquals('Nearby Services', $data[0]['company_name']);
+        $this->assertEquals('Faraway Services', $data[1]['company_name']);
+        $this->assertLessThan($data[1]['distance_km'], $data[0]['distance_km']);
+    }
+
     public function test_customer_can_create_service_request_with_uploaded_photos(): void
     {
         Storage::fake('public');
@@ -70,7 +108,7 @@ class CustomerProviderApiTest extends TestCase
         $response->assertStatus(201)
             ->assertJson([
                 'success' => true,
-                'message' => 'Service request created successfully.',
+                'message' => 'Service request created. Pay the booking deposit to confirm it.',
             ]);
 
         $requestId = $response->json('data.id');

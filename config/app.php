@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'Laravel'),
+    'name' => env('APP_NAME', 'Grab A Hand'),
 
     /*
     |--------------------------------------------------------------------------
@@ -65,7 +65,15 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
+
+    /*
+    | Business display timezone: used by the web panels, emails and PDFs (and as the fallback
+    | "local day" when a request has no customer timezone and the caller sends no X-Timezone header).
+    | Storage and calculations always stay in UTC (see App\Services\BusinessTime).
+    */
+
+    'display_timezone' => env('DISPLAY_TIMEZONE', 'America/New_York'),
 
     /*
     |--------------------------------------------------------------------------

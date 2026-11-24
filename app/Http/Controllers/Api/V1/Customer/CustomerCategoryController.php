@@ -10,18 +10,32 @@ use App\Models\Banner;
 use App\Models\PromotionalVideo;
 use App\Models\ServiceCategory;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class CustomerCategoryController extends Controller
 {
     /**
      * Get parent service categories.
      */
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        $categories = ServiceCategory::parents()
+        $query = ServiceCategory::parents()
             ->where('is_active', true)
-            ->withCount('subcategories')
-            ->get();
+            ->withCount('subcategories');
+
+        if ($search = $request->query('search')) {
+            $search = strtolower(trim($search));
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('tags', 'like', "%{$search}%")
+                    ->orWhereHas('subcategories', function ($subQ) use ($search) {
+                        $subQ->where('name', 'like', "%{$search}%")
+                            ->orWhere('tags', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        $categories = $query->get();
 
         return response()->json([
             'success' => true,
@@ -49,14 +63,23 @@ class CustomerCategoryController extends Controller
     /**
      * Get subcategories for a given parent category ID.
      */
-    public function subcategories(int $id): JsonResponse
+    public function subcategories(Request $request, int $id): JsonResponse
     {
         $parent = ServiceCategory::whereNull('parent_id')->findOrFail($id);
 
-        $subcategories = ServiceCategory::onlySubcategories()
+        $query = ServiceCategory::onlySubcategories()
             ->where('parent_id', $parent->id)
-            ->where('is_active', true)
-            ->get();
+            ->where('is_active', true);
+
+        if ($search = $request->query('search')) {
+            $search = strtolower(trim($search));
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('tags', 'like', "%{$search}%");
+            });
+        }
+
+        $subcategories = $query->get();
 
         return response()->json([
             'success' => true,

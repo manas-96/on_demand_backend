@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@yield('title', 'Admin Portal') - ServicePlatform</title>
+    <title>@yield('title', 'Admin Portal') - {{ config('app.name', 'Grab A Hand') }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -30,6 +30,8 @@
         }
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
     <style>
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
         .glass-panel {
@@ -37,15 +39,24 @@
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
         }
+        .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(245, 158, 11, 0.5) rgba(15, 23, 42, 0.8);
+        }
         .custom-scrollbar::-webkit-scrollbar {
-            width: 5px;
+            width: 6px;
+            height: 8px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-            background: rgba(15, 23, 42, 0.5);
+            background: rgba(15, 23, 42, 0.8);
+            border-radius: 9999px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: rgba(51, 65, 85, 0.5);
+            background: rgba(245, 158, 11, 0.5);
             border-radius: 9999px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(245, 158, 11, 0.8);
         }
     </style>
 </head>
@@ -55,9 +66,9 @@
     <div class="md:hidden flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
         <div class="flex items-center space-x-3">
             <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-slate-950 font-extrabold shadow-lg shadow-amber-500/30">
-                S
+                G
             </div>
-            <span class="font-bold text-white tracking-tight">ServicePlatform</span>
+            <span class="font-bold text-white tracking-tight">Grab A Hand</span>
         </div>
         <button onclick="document.getElementById('sidebar-panel').classList.toggle('hidden')" class="p-2 text-slate-400 hover:text-white rounded-lg bg-slate-800 focus:outline-none">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -78,14 +89,14 @@
                         </div>
                     </div>
                     <div>
-                        <span class="font-extrabold text-base text-white tracking-tight block leading-none">ServicePlatform</span>
+                        <span class="font-extrabold text-base text-white tracking-tight block leading-none">Grab A Hand</span>
                         <span class="text-[10px] font-semibold text-amber-400 uppercase tracking-widest mt-1 block">Admin Web Panel</span>
                     </div>
                 </a>
             </div>
 
-            <!-- Navigation Links List (Fixed, Non-Scrollable) -->
-            <div class="flex-1 overflow-hidden px-4 py-5 space-y-5">
+            <!-- Navigation Links List (Scrollable) -->
+            <div class="flex-1 overflow-y-auto custom-scrollbar px-4 py-5 space-y-5">
                 
                 <!-- Main Operations Section -->
                 <div class="space-y-1">
@@ -218,6 +229,24 @@
                         </div>
                     </a>
 
+                    <!-- Push Notifications -->
+                    <a href="{{ route('admin.notifications.index') }}" 
+                        class="group flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-semibold transition-all duration-150 {{ request()->routeIs('admin.notifications.*') ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60' }}">
+                        <div class="flex items-center space-x-3">
+                            <svg class="w-5 h-5 {{ request()->routeIs('admin.notifications.*') ? 'text-slate-950' : 'text-slate-400 group-hover:text-amber-400' }} transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                            <span>Push Notifications</span>
+                        </div>
+                    </a>
+
+                    <!-- Email Diagnostics -->
+                    <a href="{{ route('admin.email-test.index') }}" 
+                        class="group flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-semibold transition-all duration-150 {{ request()->routeIs('admin.email-test.*') ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60' }}">
+                        <div class="flex items-center space-x-3">
+                            <svg class="w-5 h-5 {{ request()->routeIs('admin.email-test.*') ? 'text-slate-950' : 'text-slate-400 group-hover:text-amber-400' }} transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 002-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                            <span>Email Diagnostics</span>
+                        </div>
+                    </a>
+
                     <!-- Settings & Audit -->
                     <a href="{{ route('admin.settings.index') }}" 
                         class="group flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-semibold transition-all duration-150 {{ request()->routeIs('admin.settings.*') ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60' }}">
@@ -225,6 +254,27 @@
                             <svg class="w-5 h-5 {{ request()->routeIs('admin.settings.*') ? 'text-slate-950' : 'text-slate-400 group-hover:text-amber-400' }} transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                             <span>Settings & Audit</span>
                         </div>
+                    </a>
+
+                    <!-- Privacy Policy -->
+                    <a href="{{ route('admin.privacy-policy.edit') }}" 
+                        class="group flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-semibold transition-all duration-150 {{ request()->routeIs('admin.privacy-policy.*') ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60' }}">
+                        <div class="flex items-center space-x-3">
+                            <svg class="w-5 h-5 {{ request()->routeIs('admin.privacy-policy.*') ? 'text-slate-950' : 'text-slate-400 group-hover:text-amber-400' }} transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                            <span>Privacy Policy</span>
+                        </div>
+                    </a>
+
+                    <!-- Customer Support -->
+                    <a href="{{ route('admin.support.index') }}" 
+                        class="group flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-semibold transition-all duration-150 {{ request()->routeIs('admin.support.*') ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60' }}">
+                        <div class="flex items-center space-x-3">
+                            <svg class="w-5 h-5 {{ request()->routeIs('admin.support.*') ? 'text-slate-950' : 'text-slate-400 group-hover:text-amber-400' }} transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                            <span>Customer Support</span>
+                        </div>
+                        <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/10 text-amber-400 border border-amber-400/20">
+                            Live
+                        </span>
                     </a>
                 </div>
 
@@ -262,15 +312,10 @@
         <header class="h-20 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-xl px-6 md:px-8 flex items-center justify-between sticky top-0 z-30">
             <div>
                 <h1 class="text-xl font-bold text-white tracking-tight">@yield('title', 'Dashboard')</h1>
-                <p class="text-xs text-slate-400 hidden sm:block">On-Demand Service Marketplace Management</p>
+                <p class="text-xs text-slate-400 hidden sm:block">Grab A Hand Service Marketplace Management</p>
             </div>
 
             <div class="flex items-center space-x-4">
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-400/10 text-amber-400 border border-amber-400/20 hidden sm:inline-flex">
-                    <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse mr-2"></span>
-                    Live Engine
-                </span>
-
                 <!-- Profile Dropdown Component -->
                 <div class="relative" id="profile-dropdown-container">
                     <button onclick="document.getElementById('profile-dropdown-menu').classList.toggle('hidden')" 
@@ -338,11 +383,22 @@
 
         <!-- Footer -->
         <footer class="border-t border-slate-800/60 bg-slate-950/80 py-4 px-8 text-center text-xs text-slate-500">
-            ServicePlatform Admin Control Panel &copy; {{ date('Y') }}
+            Grab A Hand Admin Control Panel &copy; {{ date('Y') }}
         </footer>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            flatpickr(".datepicker", {
+                dateFormat: "Y-m-d",
+                altInput: true,
+                altFormat: "M j, Y",
+                allowInput: true,
+                theme: "dark"
+            });
+        });
+
         document.addEventListener('click', function(event) {
             const container = document.getElementById('profile-dropdown-container');
             const menu = document.getElementById('profile-dropdown-menu');

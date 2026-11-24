@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register as Provider - ServicePlatform</title>
+    <title>Register as Provider - {{ config('app.name', 'Grab A Hand') }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -41,10 +41,10 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <a href="{{ route('landing') }}" class="flex items-center space-x-3">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center font-bold text-slate-950 shadow-lg shadow-amber-500/30">
-                    SP
+                    GH
                 </div>
                 <span class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-                    ServicePlatform
+                    Grab A Hand
                 </span>
             </a>
             <a href="{{ route('landing') }}" class="text-xs font-semibold px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition">
@@ -194,7 +194,7 @@
 
     <!-- Footer -->
     <footer class="border-t border-slate-800 bg-slate-950/50 py-6 text-center text-xs text-slate-500">
-        &copy; {{ date('Y') }} ServicePlatform On-Demand Backend Engine. All rights reserved.
+        &copy; {{ date('Y') }} Grab A Hand Engine. All rights reserved.
     </footer>
 
 </body>

@@ -45,7 +45,7 @@
                             "{{ $rev->comment ?? 'No comment text' }}"
                         </td>
                         <td class="px-6 py-4 text-right text-xs text-slate-400">
-                            {{ $rev->created_at->format('M d, Y') }}
+                            {{ $rev->created_at->inDisplayTimezone()->format('M d, Y') }}
                         </td>
                     </tr>
                 @empty

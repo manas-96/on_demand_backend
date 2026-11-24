@@ -40,19 +40,19 @@
             <table class="w-full text-left text-sm text-slate-300">
                 <thead class="bg-slate-950/60 text-xs text-slate-400 uppercase tracking-wider border-b border-slate-800/80">
                     <tr>
-                        <th class="px-6 py-4">Image</th>
-                        <th class="px-6 py-4">Category Name</th>
-                        <th class="px-6 py-4">Min. Charge</th>
-                        <th class="px-6 py-4">Subcategories</th>
-                        <th class="px-6 py-4">Slug Identifier</th>
-                        <th class="px-6 py-4">Status</th>
-                        <th class="px-6 py-4 text-right">Actions</th>
+                        <th class="px-6 py-4 whitespace-nowrap">Image</th>
+                        <th class="px-6 py-4 whitespace-nowrap">Category Name</th>
+                        <th class="px-6 py-4 whitespace-nowrap">Min. Charge</th>
+                        <th class="px-6 py-4 whitespace-nowrap">Subcategories</th>
+                        <th class="px-6 py-4 whitespace-nowrap">Slug Identifier</th>
+                        <th class="px-6 py-4 whitespace-nowrap">Status</th>
+                        <th class="px-6 py-4 text-right whitespace-nowrap">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-800/60">
                     @forelse($categories as $category)
                         <tr class="hover:bg-slate-800/30 transition">
-                            <td class="px-6 py-4">
+                            <td class="px-6 py-4 whitespace-nowrap">
                                 @if($category->image)
                                     @if(Str::startsWith($category->image, ['http://', 'https://']))
                                         <img src="{{ $category->image }}" alt="{{ $category->name }}" class="w-12 h-12 object-cover rounded-xl border border-slate-700 shadow-sm">
@@ -65,45 +65,47 @@
                                     </div>
                                 @endif
                             </td>
-                            <td class="px-6 py-4 font-bold text-white">
+                            <td class="px-6 py-4 font-bold text-white whitespace-nowrap">
                                 <a href="{{ route('admin.services.show', $category->id) }}" class="hover:text-amber-400 transition">
                                     {{ $category->name }}
                                 </a>
                             </td>
-                            <td class="px-6 py-4 font-semibold text-emerald-400">
+                            <td class="px-6 py-4 font-semibold text-emerald-400 whitespace-nowrap">
                                 ${{ number_format($category->minimum_booking_charge, 2) }}
                             </td>
-                            <td class="px-6 py-4">
+                            <td class="px-6 py-4 whitespace-nowrap">
                                 <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-400/10 text-amber-400 border border-amber-400/20">
                                     {{ $category->subcategories_count ?? 0 }} Subcategories
                                 </span>
                             </td>
-                            <td class="px-6 py-4 text-xs font-mono text-slate-400">
+                            <td class="px-6 py-4 text-xs font-mono text-slate-400 whitespace-nowrap">
                                 {{ $category->slug }}
                             </td>
-                            <td class="px-6 py-4">
+                            <td class="px-6 py-4 whitespace-nowrap">
                                 <span class="px-2.5 py-1 rounded-full text-xs font-semibold {{ $category->is_active ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20' }}">
                                     {{ $category->is_active ? 'Active' : 'Inactive' }}
                                 </span>
                             </td>
-                            <td class="px-6 py-4 text-right space-x-2">
-                                <a href="{{ route('admin.services.edit', $category->id) }}" class="inline-block text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition">
-                                    Edit
-                                </a>
-                                <a href="{{ route('admin.services.show', $category->id) }}" class="inline-block text-xs font-semibold px-3 py-1.5 rounded-lg border border-amber-400/30 text-amber-400 hover:bg-amber-400/10 transition">
-                                    Subcategories
-                                </a>
-                                <form method="POST" action="{{ route('admin.services.toggle-status', $category->id) }}" class="inline">
-                                    @csrf
-                                    <button type="submit" class="text-xs font-semibold px-3 py-1.5 rounded-lg border {{ $category->is_active ? 'border-rose-500/30 text-rose-400 hover:bg-rose-500/10' : 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10' }} transition">
-                                        {{ $category->is_active ? 'Deactivate' : 'Activate' }}
-                                    </button>
-                                </form>
+                            <td class="px-6 py-4 text-right whitespace-nowrap">
+                                <div class="flex items-center justify-end space-x-2">
+                                    <a href="{{ route('admin.services.edit', $category->id) }}" class="inline-block text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition">
+                                        Edit
+                                    </a>
+                                    <a href="{{ route('admin.services.show', $category->id) }}" class="inline-block text-xs font-semibold px-3 py-1.5 rounded-lg border border-amber-400/30 text-amber-400 hover:bg-amber-400/10 transition">
+                                        Subcategories
+                                    </a>
+                                    <form method="POST" action="{{ route('admin.services.toggle-status', $category->id) }}" class="inline">
+                                        @csrf
+                                        <button type="submit" class="text-xs font-semibold px-3 py-1.5 rounded-lg border {{ $category->is_active ? 'border-rose-500/30 text-rose-400 hover:bg-rose-500/10' : 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10' }} transition">
+                                            {{ $category->is_active ? 'Deactivate' : 'Activate' }}
+                                        </button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="px-6 py-12 text-center text-slate-500">
+                            <td colspan="7" class="px-6 py-12 text-center text-slate-500">
                                 No service categories configured yet.
                             </td>
                         </tr>

@@ -51,7 +51,7 @@ class InvoiceService
             $total = max(0.0, round($subtotal + $tax - $discount, 2));
 
             // Select provider user id
-            $providerId = $quote ? $quote->provider_id : ($request->target_provider_id ?? $request->customer_id);
+            $providerId = $quote?->provider_id ?? $request->resolveProviderId() ?? $request->target_provider_id ?? $request->customer_id;
 
             $invoice = Invoice::create([
                 'invoice_number' => $invoiceNumber,

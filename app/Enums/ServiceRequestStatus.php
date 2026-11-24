@@ -4,6 +4,7 @@ namespace App\Enums;
 
 enum ServiceRequestStatus: string
 {
+    case PendingPayment = 'pending_payment';
     case Submitted = 'submitted';
     case Matching = 'matching';
     case Invited = 'invited';
@@ -20,6 +21,7 @@ enum ServiceRequestStatus: string
     public function label(): string
     {
         return match ($this) {
+            self::PendingPayment => 'Awaiting Deposit Payment',
             self::Submitted => 'Submitted',
             self::Matching => 'Matching Providers',
             self::Invited => 'Invited',

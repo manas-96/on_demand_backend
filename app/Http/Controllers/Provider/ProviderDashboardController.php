@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers\Provider;
 
+use App\Enums\InvoiceStatus;
 use App\Http\Controllers\Controller;
+use App\Models\Invoice;
 use App\Models\JobAssignment;
 use App\Models\ProviderBid;
 use App\Models\ProviderEarning;
 use App\Models\ProviderJobRequest;
 use App\Models\TechnicianProfile;
+use App\Services\BusinessTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +24,19 @@ class ProviderDashboardController extends Controller
     public function dashboard(Request $request): JsonResponse|View
     {
         $provider = $request->user();
+
+        // Auto-heal any invoices or earnings belonging to requests assigned to this provider
+        $assignedRequestIds = JobAssignment::where('provider_id', $provider->id)->pluck('service_request_id');
+        if ($assignedRequestIds->isNotEmpty()) {
+            Invoice::where('status', InvoiceStatus::Paid)
+                ->whereIn('service_request_id', $assignedRequestIds)
+                ->where('provider_id', '!=', $provider->id)
+                ->update(['provider_id' => $provider->id]);
+
+            ProviderEarning::whereIn('service_request_id', $assignedRequestIds)
+                ->where('provider_id', '!=', $provider->id)
+                ->update(['provider_id' => $provider->id]);
+        }
 
         if ($request->wantsJson()) {
             return response()->json([
@@ -64,7 +80,7 @@ class ProviderDashboardController extends Controller
         if ($earningsTrend->isEmpty()) {
             $earningsTrend = collect([
                 [
-                    'month' => now()->format('M Y'),
+                    'month' => BusinessTime::now()->format('M Y'),
                     'gross' => (float) ProviderEarning::where('provider_id', $provider->id)->sum('gross_amount'),
                     'fee' => (float) ProviderEarning::where('provider_id', $provider->id)->sum('platform_fee'),
                     'net' => (float) ProviderEarning::where('provider_id', $provider->id)->sum('net_amount'),

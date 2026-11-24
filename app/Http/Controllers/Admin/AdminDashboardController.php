@@ -10,6 +10,7 @@ use App\Models\ProviderProfile;
 use App\Models\ServiceCategory;
 use App\Models\ServiceRequest;
 use App\Models\User;
+use App\Services\BusinessTime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -78,7 +79,7 @@ class AdminDashboardController extends Controller
 
         if ($revenueTrend->isEmpty()) {
             $revenueTrend = collect([
-                ['month' => now()->format('b Y'), 'gross' => $totalRevenue, 'fee' => $totalPlatformFees, 'net' => $totalNetPayouts],
+                ['month' => BusinessTime::now()->format('M Y'), 'gross' => $totalRevenue, 'fee' => $totalPlatformFees, 'net' => $totalNetPayouts],
             ]);
         }
 

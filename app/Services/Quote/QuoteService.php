@@ -4,6 +4,7 @@ namespace App\Services\Quote;
 
 use App\Enums\ApprovalType;
 use App\Enums\JobAssignmentStatus;
+use App\Enums\NotificationType;
 use App\Enums\QuoteStatus;
 use App\Enums\ServiceRequestStatus;
 use App\Models\CustomerApproval;
@@ -11,6 +12,8 @@ use App\Models\Quote;
 use App\Models\QuoteItem;
 use App\Models\ServiceRequest;
 use App\Models\User;
+use App\Services\EmailNotificationService;
+use App\Services\PushNotificationService;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -138,7 +141,13 @@ class QuoteService
                 QuoteItem::create(array_merge($pItem, ['quote_id' => $quote->id]));
             }
 
-            return $quote->fresh(['items', 'serviceRequest']);
+            $freshQuote = $quote->fresh(['items', 'serviceRequest']);
+
+            if ($approve && $freshQuote->serviceRequest) {
+                app(EmailNotificationService::class)->sendQuoteApprovedToCustomer($freshQuote->serviceRequest, $freshQuote);
+            }
+
+            return $freshQuote;
         });
     }
 
@@ -156,7 +165,13 @@ class QuoteService
             'provider_approved_at' => now(),
         ]);
 
-        return $quote->fresh();
+        $freshQuote = $quote->fresh(['serviceRequest']);
+
+        if ($freshQuote->serviceRequest) {
+            app(EmailNotificationService::class)->sendQuoteApprovedToCustomer($freshQuote->serviceRequest, $freshQuote);
+        }
+
+        return $freshQuote;
     }
 
     /**
@@ -191,6 +206,47 @@ class QuoteService
             $quote->serviceRequest->jobAssignments()
                 ->whereNotIn('status', [JobAssignmentStatus::Completed, JobAssignmentStatus::Declined])
                 ->update(['status' => JobAssignmentStatus::InProgress]);
+
+            // Customer Notification
+            app(PushNotificationService::class)->send(
+                userId: $customer->id,
+                title: 'Quotation Approved',
+                body: 'The quotation for your service request has been approved.',
+                type: NotificationType::Booking->value,
+                data: [
+                    'type' => 'booking',
+                    'booking_id' => $quote->serviceRequest->request_number,
+                    'screen' => 'booking_details',
+                ],
+                eventId: $quote->serviceRequest->request_number.'_quote_approved_cust_'.$quote->id
+            );
+
+            // Technician Notification
+            $technicianId = $quote->technician_id ?? $quote->serviceRequest->jobAssignment?->technician_id;
+            if ($technicianId) {
+                app(PushNotificationService::class)->send(
+                    userId: $technicianId,
+                    title: 'Quotation Approved',
+                    body: 'The quotation for the assigned job has been approved.',
+                    type: NotificationType::Booking->value,
+                    data: [
+                        'type' => 'booking',
+                        'booking_id' => $quote->serviceRequest->request_number,
+                        'screen' => 'booking_details',
+                    ],
+                    eventId: $quote->serviceRequest->request_number.'_quote_approved_tech_'.$quote->id
+                );
+            }
+
+            // Email Notification Trigger 4: Customer accepted quote -> Provider gets email
+            $provider = $quote->provider ?? $quote->serviceRequest->targetProvider;
+            if ($provider) {
+                app(EmailNotificationService::class)->sendQuoteAcceptedToProvider(
+                    $quote->serviceRequest,
+                    $quote,
+                    $provider
+                );
+            }
 
             return $approval;
         });

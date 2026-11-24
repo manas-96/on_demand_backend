@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Api\V1\Customer;
 
-use App\Enums\InvoiceStatus;
+use App\Enums\JobAssignmentStatus;
+use App\Enums\NotificationType;
+use App\Enums\PaymentType;
 use App\Enums\ServiceRequestStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Customer\CreateServiceRequestForm;
@@ -10,19 +12,24 @@ use App\Http\Resources\ProviderBidResource;
 use App\Http\Resources\QuoteResource;
 use App\Http\Resources\ServiceRequestResource;
 use App\Models\Invoice;
+use App\Models\JobStatusHistory;
 use App\Models\ProviderBid;
 use App\Models\Quote;
 use App\Models\Review;
 use App\Models\ServiceRequest;
 use App\Services\Bidding\BiddingService;
+use App\Services\BusinessTime;
+use App\Services\EmailNotificationService;
 use App\Services\Matching\ProviderMatchingService;
 use App\Services\Media\ImageUploadService;
-use App\Services\Payment\PaymentService;
+use App\Services\Payment\BookingPaymentService;
+use App\Services\PushNotificationService;
 use App\Services\Quote\QuoteService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class CustomerRequestController extends Controller
 {
@@ -30,7 +37,7 @@ class CustomerRequestController extends Controller
         protected ProviderMatchingService $matchingService,
         protected BiddingService $biddingService,
         protected QuoteService $quoteService,
-        protected PaymentService $paymentService,
+        protected BookingPaymentService $bookingPaymentService,
         protected ImageUploadService $uploadService,
     ) {}
 
@@ -39,7 +46,7 @@ class CustomerRequestController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = ServiceRequest::with(['category', 'subCategory', 'service', 'photos', 'jobAssignments.technician', 'targetProvider'])
+        $query = ServiceRequest::with(['category', 'subCategory', 'service', 'photos', 'jobAssignments.technician', 'jobAssignments.provider', 'targetProvider', 'quotes.provider'])
             ->where('customer_id', $request->user()->id);
 
         if ($request->filled('status')) {
@@ -81,9 +88,14 @@ class CustomerRequestController extends Controller
         $validated = $request->validated();
         $validated['customer_id'] = $request->user()->id;
         $validated['request_number'] = ServiceRequest::generateRequestNumber();
-        $validated['status'] = ServiceRequestStatus::Submitted;
+        $validated['status'] = ServiceRequestStatus::PendingPayment;
+        // Customer's zone: explicit field, else the app's X-Timezone header, else the business zone.
+        $validated['timezone'] = BusinessTime::timezone($validated['timezone'] ?? null);
 
         $serviceRequest = ServiceRequest::create($validated);
+
+        // Deposit is decided server-side; providers are only invited once it is paid.
+        $serviceRequest->update(['deposit_amount' => $this->bookingPaymentService->depositAmountFor($serviceRequest)]);
 
         // Process uploaded file binaries or photo URL strings
         if ($request->hasFile('photos')) {
@@ -104,15 +116,10 @@ class CustomerRequestController extends Controller
             }
         }
 
-        // If broadcast request, match and dispatch invitations
-        if ($serviceRequest->request_type->value === 'broadcast') {
-            $this->matchingService->dispatchInvitations($serviceRequest);
-        }
-
         return response()->json([
             'success' => true,
-            'message' => 'Service request created successfully.',
-            'data' => new ServiceRequestResource($serviceRequest->load(['category', 'subCategory', 'service', 'photos'])),
+            'message' => 'Service request created. Pay the booking deposit to confirm it.',
+            'data' => new ServiceRequestResource($serviceRequest->fresh()->load(['category', 'subCategory', 'service', 'photos'])),
         ], 201);
     }
 
@@ -145,7 +152,7 @@ class CustomerRequestController extends Controller
     public function show(Request $request, string|int $id): JsonResponse
     {
         $serviceRequest = $this->findServiceRequestForUser($request, $id);
-        $serviceRequest->load(['category', 'subCategory', 'service', 'photos', 'targetProvider', 'jobAssignments.technician', 'review']);
+        $serviceRequest->load(['category', 'subCategory', 'service', 'photos', 'targetProvider', 'jobAssignments.technician', 'jobAssignments.provider', 'quotes.provider', 'review']);
 
         return response()->json([
             'success' => true,
@@ -296,97 +303,64 @@ class CustomerRequestController extends Controller
     }
 
     /**
-     * Pay invoice.
+     * Start a Stripe payment for the booking deposit or the remaining balance (amounts computed server-side).
      */
-    public function pay(Request $request, int $invoiceId): JsonResponse
+    public function paymentIntent(Request $request, string|int $id): JsonResponse
     {
-        $request->validate([
-            'transaction_id' => ['required', 'string'],
-            'amount' => ['required', 'numeric', 'min:1'],
-            'payment_gateway' => ['nullable', 'string'],
-        ]);
-
-        $invoice = Invoice::with('serviceRequest')->where('customer_id', $request->user()->id)->findOrFail($invoiceId);
-
-        $payment = $this->paymentService->recordPayment(
-            $invoice,
-            $request->transaction_id,
-            (float) $request->amount,
-            $request->payment_gateway ?? 'stripe'
-        );
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Payment processed successfully.',
-            'data' => $payment,
-        ]);
-    }
-
-    /**
-     * Pay / Settle final balance for customer request.
-     */
-    public function payRequest(Request $request, string|int $id): JsonResponse
-    {
-        $request->validate([
-            'amount' => ['required', 'numeric', 'min:0'],
-            'payment_method' => ['nullable', 'string'],
-            'transaction_id' => ['nullable', 'string'],
-            'tip_amount' => ['nullable', 'numeric', 'min:0'],
+        $validated = $request->validate([
+            'type' => ['required', 'string', Rule::enum(PaymentType::class)],
+            'tip_amount' => ['nullable', 'numeric', 'min:0', 'max:100000'],
         ]);
 
         $serviceRequest = $this->findServiceRequestForUser($request, $id);
 
-        $invoice = Invoice::where('service_request_id', $serviceRequest->id)->latest()->first();
-
-        $amount = (float) $request->amount;
-        $tipAmount = (float) ($request->tip_amount ?? 0);
-        $totalPayment = $amount + $tipAmount;
-
-        if (! $invoice) {
-            $invoice = Invoice::create([
-                'invoice_number' => Invoice::generateInvoiceNumber(),
-                'service_request_id' => $serviceRequest->id,
-                'customer_id' => $serviceRequest->customer_id,
-                'provider_id' => $serviceRequest->target_provider_id ?? $serviceRequest->customer_id,
-                'subtotal' => $amount,
-                'tax' => 0,
-                'discount' => 0,
-                'tip_amount' => $tipAmount,
-                'total' => $totalPayment,
-                'status' => InvoiceStatus::Issued,
-            ]);
-        } else {
-            $updateData = [];
-            if ($tipAmount > 0) {
-                $updateData['tip_amount'] = $tipAmount;
-            }
-            if ((float) $invoice->total < $totalPayment) {
-                $updateData['total'] = $totalPayment;
-            }
-            if (! empty($updateData)) {
-                $invoice->update($updateData);
-            }
-        }
-
-        $transactionId = $request->transaction_id ?? 'TXN-'.strtoupper(Str::random(10));
-        $paymentGateway = $request->payment_method ?? 'card';
-
-        $payment = $this->paymentService->recordPayment(
-            $invoice,
-            $transactionId,
-            $totalPayment,
-            $paymentGateway
-        );
+        $data = $validated['type'] === PaymentType::Deposit->value
+            ? $this->bookingPaymentService->createDepositIntent($serviceRequest)
+            : $this->bookingPaymentService->createBalanceIntent($serviceRequest, (float) ($validated['tip_amount'] ?? 0));
 
         return response()->json([
             'success' => true,
-            'message' => 'Payment processed and settled successfully.',
+            'message' => ($data['requires_payment'] ?? true) ? 'Payment intent ready.' : 'Nothing left to pay.',
+            'data' => $data,
+        ]);
+    }
+
+    /**
+     * Confirm a Stripe payment after the payment sheet completes (verified against Stripe, idempotent).
+     */
+    public function confirmPayment(Request $request, string|int $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'payment_intent_id' => ['required', 'string', 'max:255'],
+        ]);
+
+        $serviceRequest = $this->findServiceRequestForUser($request, $id);
+        $payment = $this->bookingPaymentService->confirm($serviceRequest, $validated['payment_intent_id']);
+
+        return response()->json([
+            'success' => true,
+            'message' => $payment->type === PaymentType::Deposit
+                ? 'Deposit received. Your request has been sent to providers.'
+                : 'Payment received. Thank you!',
             'data' => [
-                'service_request_id' => $serviceRequest->id,
-                'invoice_id' => $invoice->id,
-                'payment' => $payment,
-                'is_paid' => true,
+                'payment_id' => $payment->id,
+                'payment_type' => $payment->type->value,
+                'amount' => (float) $payment->amount,
+                'summary' => $this->bookingPaymentService->summary($serviceRequest->fresh()),
             ],
+        ]);
+    }
+
+    /**
+     * Deposit paid, invoice total and remaining balance for a request.
+     */
+    public function paymentSummary(Request $request, string|int $id): JsonResponse
+    {
+        $serviceRequest = $this->findServiceRequestForUser($request, $id);
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->bookingPaymentService->summary($serviceRequest),
         ]);
     }
 
@@ -462,18 +436,23 @@ class CustomerRequestController extends Controller
             $total = $subtotal + $tax;
         }
 
-        $depositPaid = min(250.00, $total > 0 ? $total : 250.00);
         $tipAmount = (float) ($invoice?->tip_amount ?? 0);
+        if ($invoice && (float) $invoice->total > 0) {
+            $total = (float) $invoice->total;
+        } else {
+            $total = round($subtotal + $tax - $discount + $tipAmount, 2);
+        }
+        $depositPaid = min($serviceRequest->depositPaidAmount(), $total);
 
         $pdfData = [
             'invoiceNumber' => $invoiceNumber,
             'requestNumber' => $requestNumber,
-            'dateIssued' => now()->format('M d, Y'),
+            'dateIssued' => BusinessTime::now($serviceRequest->localTimezone())->format('M d, Y'),
             'customerName' => $customer?->name ?? 'Valued Customer',
             'customerEmail' => $customer?->email ?? 'customer@example.com',
             'customerPhone' => $customer?->phone ?? 'N/A',
             'serviceAddress' => $serviceRequest->address_line ?? 'Customer Address',
-            'providerName' => $provider?->name ?? 'On Demand Provider',
+            'providerName' => $provider?->name ?? 'Grab A Hand Provider',
             'technicianName' => $technician?->name ?? 'Assigned Technician',
             'serviceTitle' => $serviceRequest->service?->name ?? $serviceRequest->description ?? 'On-Demand Service',
             'categoryName' => $serviceRequest->category?->name ?? 'General Maintenance',
@@ -482,7 +461,7 @@ class CustomerRequestController extends Controller
             'tax' => $tax,
             'discount' => $discount,
             'tipAmount' => $tipAmount,
-            'total' => $total + $tipAmount,
+            'total' => $total,
             'depositPaid' => $depositPaid,
         ];
 
@@ -581,6 +560,140 @@ class CustomerRequestController extends Controller
                 'created_at' => $review->created_at?->toIso8601String(),
                 'updated_at' => $review->updated_at?->toIso8601String(),
             ],
+        ]);
+    }
+
+    /**
+     * Cancel an active service request by the owning customer.
+     */
+    public function cancel(Request $request, string|int $id): JsonResponse
+    {
+        $request->validate([
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $cleanId = trim((string) $id);
+        $hyphenated = (strlen($cleanId) === 14 && is_numeric($cleanId))
+            ? 'SR-'.substr($cleanId, 0, 8).'-'.substr($cleanId, 8)
+            : $cleanId;
+
+        $serviceRequest = ServiceRequest::with(['customer', 'category', 'targetProvider', 'jobAssignments.technician', 'jobAssignments.provider'])
+            ->where(function ($query) use ($cleanId, $hyphenated) {
+                if (is_numeric($cleanId) && (float) $cleanId <= 2147483647) {
+                    $query->where('id', (int) $cleanId);
+                }
+                $query->orWhere('request_number', $cleanId)
+                    ->orWhere('request_number', $hyphenated)
+                    ->orWhere('request_number', 'LIKE', '%'.$cleanId.'%')
+                    ->orWhereRaw("REPLACE(REPLACE(request_number, '-', ''), 'SR', '') LIKE ?", ["%{$cleanId}%"]);
+            })
+            ->first();
+
+        if (! $serviceRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Service request not found.',
+            ], 404);
+        }
+
+        if ($serviceRequest->customer_id !== $request->user()->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized. You do not own this service request.',
+            ], 403);
+        }
+
+        if ($serviceRequest->status === ServiceRequestStatus::Cancelled) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Service request is already cancelled.',
+            ], 422);
+        }
+
+        if ($serviceRequest->status === ServiceRequestStatus::Completed) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot cancel a completed service request.',
+            ], 422);
+        }
+
+        if ($serviceRequest->status === ServiceRequestStatus::InProgress) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot cancel a service request that is already in progress. Please contact support.',
+            ], 422);
+        }
+
+        $oldStatus = $serviceRequest->status->value;
+
+        // Transition status to Cancelled
+        $serviceRequest->update(['status' => ServiceRequestStatus::Cancelled]);
+
+        // Decline any active/pending job assignments
+        $activeAssignment = $serviceRequest->jobAssignments
+            ->whereNotIn('status', [JobAssignmentStatus::Declined, JobAssignmentStatus::Completed])
+            ->first();
+
+        if ($activeAssignment) {
+            $activeAssignment->update(['status' => JobAssignmentStatus::Declined]);
+        }
+
+        // Record audit trail history
+        JobStatusHistory::create([
+            'service_request_id' => $serviceRequest->id,
+            'job_assignment_id' => $activeAssignment?->id,
+            'changed_by_type' => 'customer',
+            'changed_by_id' => $request->user()->id,
+            'old_status' => $oldStatus,
+            'new_status' => ServiceRequestStatus::Cancelled->value,
+            'reason' => $request->input('reason', 'Cancelled by customer'),
+        ]);
+
+        // Dispatch push notification to assigned provider if applicable
+        $targetProviderId = $serviceRequest->target_provider_id ?? $activeAssignment?->provider_id;
+        if ($targetProviderId) {
+            app(PushNotificationService::class)->send(
+                userId: $targetProviderId,
+                title: 'Booking Cancelled',
+                body: "Booking #{$serviceRequest->request_number} was cancelled by the customer.",
+                type: NotificationType::Booking->value,
+                data: [
+                    'type' => 'booking',
+                    'booking_id' => (string) $serviceRequest->request_number,
+                    'screen' => 'booking_details',
+                ],
+                eventId: $serviceRequest->request_number.'_cancelled_provider_'.now()->timestamp
+            );
+        }
+
+        // Dispatch push notification to assigned technician if applicable
+        $technicianId = $activeAssignment?->technician_id;
+        if ($technicianId) {
+            app(PushNotificationService::class)->send(
+                userId: $technicianId,
+                title: 'Booking Cancelled',
+                body: "Booking #{$serviceRequest->request_number} was cancelled by the customer.",
+                type: NotificationType::Booking->value,
+                data: [
+                    'type' => 'booking',
+                    'booking_id' => (string) $serviceRequest->request_number,
+                    'screen' => 'booking_details',
+                ],
+                eventId: $serviceRequest->request_number.'_cancelled_tech_'.now()->timestamp
+            );
+        }
+
+        // Dispatch email notification across all stakeholders (customer, provider, technician)
+        app(EmailNotificationService::class)->sendBookingCancelled(
+            $serviceRequest,
+            'customer',
+            $request->input('reason')
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Service request cancelled successfully.',
+            'data' => new ServiceRequestResource($serviceRequest->fresh()->load(['category', 'subCategory', 'service', 'photos', 'jobAssignments.technician', 'jobAssignments.provider'])),
         ]);
     }
 }

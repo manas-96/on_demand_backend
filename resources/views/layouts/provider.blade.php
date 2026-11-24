@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>@yield('title', 'Provider Portal') - ServicePlatform</title>
+    <title>@yield('title', 'Provider Portal') - {{ config('app.name', 'Grab A Hand') }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -45,9 +45,9 @@
     <div class="md:hidden flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
         <div class="flex items-center space-x-3">
             <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-yellow-500 flex items-center justify-center text-slate-950 font-extrabold shadow-lg shadow-amber-500/30">
-                P
+                G
             </div>
-            <span class="font-bold text-white tracking-tight">Provider Portal</span>
+            <span class="font-bold text-white tracking-tight">Grab A Hand Provider Portal</span>
         </div>
         <button onclick="document.getElementById('sidebar-panel').classList.toggle('hidden')" class="p-2 text-slate-400 hover:text-white rounded-lg bg-slate-800 focus:outline-none">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -66,8 +66,8 @@
                         </div>
                     </div>
                     <div>
-                        <span class="font-extrabold text-base text-white tracking-tight block leading-none">Provider Portal</span>
-                        <span class="text-[10px] font-semibold text-amber-400 uppercase tracking-widest mt-1 block">Company Console</span>
+                        <span class="font-extrabold text-base text-white tracking-tight block leading-none">Grab A Hand</span>
+                        <span class="text-[10px] font-semibold text-amber-400 uppercase tracking-widest mt-1 block">Provider Console</span>
                     </div>
                 </a>
             </div>
@@ -119,6 +119,12 @@
                         class="flex items-center space-x-3 px-3.5 py-3 rounded-xl text-sm font-semibold transition-all duration-150 {{ request()->routeIs('provider.earnings.*') ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60' }}">
                         <svg class="w-5 h-5 {{ request()->routeIs('provider.earnings.*') ? 'text-slate-950' : 'text-amber-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         <span>Earnings</span>
+                    </a>
+
+                    <a href="{{ route('provider.support.index') }}" 
+                        class="flex items-center space-x-3 px-3.5 py-3 rounded-xl text-sm font-semibold transition-all duration-150 {{ request()->routeIs('provider.support.*') ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-bold shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60' }}">
+                        <svg class="w-5 h-5 {{ request()->routeIs('provider.support.*') ? 'text-slate-950' : 'text-amber-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                        <span>Help & Support</span>
                     </a>
                 </div>
             </div>

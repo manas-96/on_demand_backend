@@ -68,60 +68,109 @@
 
     $adminProfit = round($serviceCost * ($commissionRate / 100), 2);
     $providerPayout = round($grandTotal - $adminProfit + $tipAmount, 2);
+
+    $awardedHistory = $history->first(function($h) {
+        return in_array($h->new_status, ['awarded', 'assigned', 'in_progress', 'completed']);
+    });
+    $awardedTime = $awardedHistory?->created_at 
+        ?? $serviceRequest->providerJobRequests->firstWhere('status', 'selected')?->updated_at 
+        ?? ($assignedProvider ? $serviceRequest->updated_at : null);
+
+    $assignmentTime = $assignment?->assigned_at ?? $assignment?->created_at;
+    $inspectionTime = $inspection?->inspected_at ?? $inspection?->created_at;
+    $quoteTime = $quote?->created_at;
+    $approvalTime = $approvals->last()?->created_at;
+    $progressTime = $progress->last()?->created_at;
+    $invoiceTime = $invoice?->created_at;
+    $paymentTime = $invoice?->payments->last()?->paid_at ?? ($isPaid ? $invoice?->updated_at : null);
+    $reviewTime = $review?->created_at;
 @endphp
 
     <!-- 15-Stage Lifecycle Stepper -->
     <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
         <h2 class="text-sm font-bold uppercase tracking-wider text-slate-400">Canonical Lifecycle Trace</h2>
         <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span class="text-slate-500 block">1. Customer Request</span>
-                <strong class="text-emerald-400">Created</strong>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-2">
+                <div>
+                    <span class="text-slate-500 block">1. Customer Request</span>
+                    <strong class="text-emerald-400">Created</strong>
+                </div>
+                <span class="text-[10px] text-slate-400 font-mono block">{{ $serviceRequest->created_at?->inDisplayTimezone()->format('M d, Y H:i') }}</span>
             </div>
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span class="text-slate-500 block">2. Type & Dispatch</span>
-                <strong class="text-white">{{ ucfirst($serviceRequest->request_type->value) }}</strong>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-2">
+                <div>
+                    <span class="text-slate-500 block">2. Type & Dispatch</span>
+                    <strong class="text-white">{{ ucfirst($serviceRequest->request_type->value) }}</strong>
+                </div>
+                <span class="text-[10px] text-slate-400 font-mono block">{{ $serviceRequest->created_at?->inDisplayTimezone()->format('M d, Y H:i') }}</span>
             </div>
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span class="text-slate-500 block">3. Awarded Provider</span>
-                <strong class="text-indigo-400">{{ $awardedProviderName }}</strong>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-2">
+                <div>
+                    <span class="text-slate-500 block">3. Awarded Provider</span>
+                    <strong class="text-indigo-400">{{ $awardedProviderName }}</strong>
+                </div>
+                <span class="text-[10px] {{ $awardedTime ? 'text-slate-400 font-mono' : 'text-slate-600 italic' }} block">{{ $awardedTime ? $awardedTime->format('M d, Y H:i') : 'Pending' }}</span>
             </div>
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span class="text-slate-500 block">4. Technician Dispatch</span>
-                <strong class="text-white">{{ $assignment?->technician?->name ?? 'Unassigned' }}</strong>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-2">
+                <div>
+                    <span class="text-slate-500 block">4. Technician Dispatch</span>
+                    <strong class="text-white">{{ $assignment?->technician?->name ?? 'Unassigned' }}</strong>
+                </div>
+                <span class="text-[10px] {{ $assignmentTime ? 'text-slate-400 font-mono' : 'text-slate-600 italic' }} block">{{ $assignmentTime ? $assignmentTime->format('M d, Y H:i') : 'Pending' }}</span>
             </div>
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span class="text-slate-500 block">5. Site Inspection</span>
-                <strong class="{{ $inspection ? 'text-emerald-400' : 'text-slate-500' }}">{{ $inspection ? 'Completed' : 'Pending' }}</strong>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-2">
+                <div>
+                    <span class="text-slate-500 block">5. Site Inspection</span>
+                    <strong class="{{ $inspection ? 'text-emerald-400' : 'text-slate-500' }}">{{ $inspection ? 'Completed' : 'Pending' }}</strong>
+                </div>
+                <span class="text-[10px] {{ $inspectionTime ? 'text-slate-400 font-mono' : 'text-slate-600 italic' }} block">{{ $inspectionTime ? $inspectionTime->format('M d, Y H:i') : 'Pending' }}</span>
             </div>
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span class="text-slate-500 block">6. Technical Quote</span>
-                <strong class="{{ $quote ? 'text-emerald-400' : 'text-slate-500' }}">${{ number_format($quote?->total ?? 0, 2) }}</strong>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-2">
+                <div>
+                    <span class="text-slate-500 block">6. Technical Quote</span>
+                    <strong class="{{ $quote ? 'text-emerald-400' : 'text-slate-500' }}">${{ number_format($quote?->total ?? 0, 2) }}</strong>
+                </div>
+                <span class="text-[10px] {{ $quoteTime ? 'text-slate-400 font-mono' : 'text-slate-600 italic' }} block">{{ $quoteTime ? $quoteTime->format('M d, Y H:i') : 'Pending' }}</span>
             </div>
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span class="text-slate-500 block">7. Customer Approval</span>
-                <strong class="{{ $approvals->count() ? 'text-emerald-400' : 'text-slate-500' }}">{{ $approvals->count() ? 'Approved' : 'Pending' }}</strong>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-2">
+                <div>
+                    <span class="text-slate-500 block">7. Customer Approval</span>
+                    <strong class="{{ $approvals->count() ? 'text-emerald-400' : 'text-slate-500' }}">{{ $approvals->count() ? 'Approved' : 'Pending' }}</strong>
+                </div>
+                <span class="text-[10px] {{ $approvalTime ? 'text-slate-400 font-mono' : 'text-slate-600 italic' }} block">{{ $approvalTime ? $approvalTime->format('M d, Y H:i') : 'Pending' }}</span>
             </div>
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span class="text-slate-500 block">8. Progress Exec</span>
-                <strong class="text-indigo-400">{{ $progress->last()?->progress_percentage ?? 0 }}% Done</strong>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-2">
+                <div>
+                    <span class="text-slate-500 block">8. Progress Exec</span>
+                    <strong class="text-indigo-400">{{ $progress->last()?->progress_percentage ?? 0 }}% Done</strong>
+                </div>
+                <span class="text-[10px] {{ $progressTime ? 'text-slate-400 font-mono' : 'text-slate-600 italic' }} block">{{ $progressTime ? $progressTime->format('M d, Y H:i') : 'Pending' }}</span>
             </div>
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span class="text-slate-500 block">9. Final Invoice</span>
-                <strong class="text-amber-400">{{ $invoice?->invoice_number ?? 'Pending' }}</strong>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-2">
+                <div>
+                    <span class="text-slate-500 block">9. Final Invoice</span>
+                    <strong class="text-amber-400">{{ $invoice?->invoice_number ?? 'Pending' }}</strong>
+                </div>
+                <span class="text-[10px] {{ $invoiceTime ? 'text-slate-400 font-mono' : 'text-slate-600 italic' }} block">{{ $invoiceTime ? $invoiceTime->format('M d, Y H:i') : 'Pending' }}</span>
             </div>
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span class="text-slate-500 block">10. Settlement</span>
-                <strong class="{{ $invoice?->status->value === 'paid' ? 'text-emerald-400' : 'text-slate-500' }}">
-                    {{ ucfirst($invoice?->status->value ?? 'Unpaid') }}
-                    @if($invoice && (float)$invoice->tip_amount > 0)
-                        <span class="text-indigo-400 text-[10px] block font-normal">(+${{ number_format($invoice->tip_amount, 2) }} Tip 🎁)</span>
-                    @endif
-                </strong>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-2">
+                <div>
+                    <span class="text-slate-500 block">10. Settlement</span>
+                    <strong class="{{ $invoice?->status->value === 'paid' ? 'text-emerald-400' : 'text-slate-500' }}">
+                        {{ ucfirst($invoice?->status->value ?? 'Unpaid') }}
+                        @if($invoice && (float)$invoice->tip_amount > 0)
+                            <span class="text-indigo-400 text-[10px] block font-normal">(+${{ number_format($invoice->tip_amount, 2) }} Tip 🎁)</span>
+                        @endif
+                    </strong>
+                </div>
+                <span class="text-[10px] {{ $paymentTime ? 'text-slate-400 font-mono' : 'text-slate-600 italic' }} block">{{ $paymentTime ? $paymentTime->format('M d, Y H:i') : 'Pending' }}</span>
             </div>
-            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                <span class="text-slate-500 block">11. Review Rating</span>
-                <strong class="text-amber-400">{{ $review ? $review->rating . ' ★' : 'No Review' }}</strong>
+            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between space-y-2">
+                <div>
+                    <span class="text-slate-500 block">11. Review Rating</span>
+                    <strong class="text-amber-400">{{ $review ? $review->rating . ' ★' : 'No Review' }}</strong>
+                </div>
+                <span class="text-[10px] {{ $reviewTime ? 'text-slate-400 font-mono' : 'text-slate-600 italic' }} block">{{ $reviewTime ? $reviewTime->format('M d, Y H:i') : 'Pending' }}</span>
             </div>
         </div>
     </div>
@@ -206,7 +255,7 @@
                             </div>
                             <div class="text-right">
                                 <span class="text-slate-500 block">Date Issued:</span>
-                                <span class="text-slate-300">{{ $invoice->created_at->format('M d, Y') }}</span>
+                                <span class="text-slate-300">{{ $invoice->created_at->inDisplayTimezone()->format('M d, Y') }}</span>
                             </div>
                         </div>
 
@@ -276,7 +325,7 @@
                                         </div>
                                         <div class="text-right">
                                             <strong class="text-emerald-400">${{ number_format($payment->amount, 2) }}</strong>
-                                            <span class="text-slate-500 block text-[10px]">{{ $payment->paid_at?->format('M d, H:i') ?? 'Paid' }}</span>
+                                            <span class="text-slate-500 block text-[10px]">{{ $payment->paid_at?->inDisplayTimezone()->format('M d, H:i') ?? 'Paid' }}</span>
                                         </div>
                                     </div>
                                 @endforeach
@@ -449,7 +498,7 @@
                         <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
                             <div class="flex items-center justify-between">
                                 <span class="font-bold text-white">{{ $h->changed_by_type }} ({{ $h->changedBy->name ?? 'System' }})</span>
-                                <span class="text-slate-500">{{ $h->created_at->format('M d, H:i') }}</span>
+                                <span class="text-slate-500">{{ $h->created_at->inDisplayTimezone()->format('M d, H:i') }}</span>
                             </div>
                             <div class="text-slate-400 mt-1">Status: {{ $h->old_status ?? 'None' }} → <strong class="text-indigo-400">{{ $h->new_status }}</strong></div>
                             @if($h->reason)

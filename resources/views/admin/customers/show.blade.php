@@ -8,7 +8,7 @@
         <div>
             <a href="{{ route('admin.customers.index') }}" class="text-xs text-indigo-400 hover:underline mb-1 inline-block">← Back to Customers</a>
             <h1 class="text-2xl font-bold text-white">{{ $customer->name }}</h1>
-            <p class="text-xs text-slate-400">Customer ID #{{ $customer->id }} • Member since {{ $customer->created_at->format('M d, Y') }}</p>
+            <p class="text-xs text-slate-400">Customer ID #{{ $customer->id }} • Member since {{ $customer->created_at->inDisplayTimezone()->format('M d, Y') }}</p>
         </div>
         <form method="POST" action="{{ route('admin.customers.toggle-status', $customer->id) }}">
             @csrf

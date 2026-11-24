@@ -40,4 +40,31 @@ class AdminSettingController extends Controller
 
         return back()->with('success', 'System operational settings updated successfully.');
     }
+
+    /**
+     * Show form to edit the privacy policy content.
+     */
+    public function editPrivacyPolicy(): View
+    {
+        $settings = SystemSetting::getSettings();
+
+        return view('admin.settings.privacy-policy', compact('settings'));
+    }
+
+    /**
+     * Update the privacy policy content.
+     */
+    public function updatePrivacyPolicy(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'privacy_policy' => ['required', 'string'],
+        ]);
+
+        $settings = SystemSetting::getSettings();
+        $settings->update($validated);
+
+        return redirect()
+            ->route('admin.privacy-policy.edit')
+            ->with('success', 'Privacy Policy content updated successfully.');
+    }
 }

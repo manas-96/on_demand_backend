@@ -3,20 +3,28 @@
 namespace App\Http\Controllers\Provider;
 
 use App\Enums\JobAssignmentStatus;
+use App\Enums\NotificationType;
 use App\Enums\ProviderJobRequestStatus;
 use App\Enums\ServiceRequestStatus;
 use App\Http\Controllers\Controller;
 use App\Models\JobAssignment;
+use App\Models\JobInspection;
+use App\Models\JobProgress;
 use App\Models\ProviderBid;
 use App\Models\ProviderJobRequest;
 use App\Models\Quote;
 use App\Models\ServiceRequest;
+use App\Models\User;
 use App\Services\Bidding\BiddingService;
+use App\Services\BusinessTime;
+use App\Services\EmailNotificationService;
+use App\Services\PushNotificationService;
 use App\Services\Quote\QuoteService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class ProviderRequestController extends Controller
@@ -69,7 +77,14 @@ class ProviderRequestController extends Controller
     {
         $providerId = $request->user()->id;
 
-        $query = ProviderJobRequest::with(['serviceRequest.category', 'serviceRequest.subCategory', 'serviceRequest.service', 'serviceRequest.customer'])
+        $query = ProviderJobRequest::with([
+            'serviceRequest.category',
+            'serviceRequest.subCategory',
+            'serviceRequest.service',
+            'serviceRequest.customer',
+            'serviceRequest.quotes.items',
+            'serviceRequest.jobAssignments.technician',
+        ])
             ->where('provider_id', $providerId)
             ->where(function ($q) use ($providerId) {
                 $q->whereIn('status', ['selected', 'accepted', 'bid_submitted'])
@@ -168,10 +183,20 @@ class ProviderRequestController extends Controller
 
         $quote = Quote::with(['items', 'technician'])
             ->where('service_request_id', $serviceRequest->id)
-            ->where('provider_id', $providerId)
+            ->latest()
             ->first();
 
-        return view('provider.requests.show', compact('jobRequest', 'serviceRequest', 'myBid', 'assignment', 'technicians', 'quote'));
+        $inspections = JobInspection::with('technician')
+            ->where('service_request_id', $serviceRequest->id)
+            ->latest()
+            ->get();
+
+        $progressUpdates = JobProgress::with('technician')
+            ->where('service_request_id', $serviceRequest->id)
+            ->latest()
+            ->get();
+
+        return view('provider.requests.show', compact('jobRequest', 'serviceRequest', 'myBid', 'assignment', 'technicians', 'quote', 'inspections', 'progressUpdates'));
     }
 
     /**
@@ -204,6 +229,12 @@ class ProviderRequestController extends Controller
         $jobRequest = ProviderJobRequest::where('provider_id', $request->user()->id)->findOrFail($id);
         $serviceRequest = $jobRequest->serviceRequest;
 
+        if (! $serviceRequest->isTechnicianAssignmentAllowed()) {
+            $formattedDate = $serviceRequest->preferred_date ? $serviceRequest->preferred_date->format('M d, Y') : 'the scheduled date';
+
+            return back()->with('error', "Technician assignment is locked until the scheduled booking date ({$formattedDate}).");
+        }
+
         $providerProfile = $request->user()->providerProfile;
         $techProfile = $providerProfile
             ? $providerProfile->technicians()
@@ -232,6 +263,50 @@ class ProviderRequestController extends Controller
         $serviceRequest->update(['status' => ServiceRequestStatus::Assigned]);
         $jobRequest->update(['status' => ProviderJobRequestStatus::Selected]);
 
+        $technicianId = $validated['technician_id'];
+
+        // Customer Notification
+        app(PushNotificationService::class)->send(
+            userId: $serviceRequest->customer_id,
+            title: 'Technician Assigned',
+            body: 'A technician has been assigned to your service request.',
+            type: NotificationType::Booking->value,
+            data: [
+                'type' => 'booking',
+                'booking_id' => $serviceRequest->request_number,
+                'screen' => 'booking_details',
+            ],
+            eventId: $serviceRequest->request_number.'_tech_assigned_cust_'.$technicianId.'_'.now()->timestamp
+        );
+
+        // Technician Notification
+        app(PushNotificationService::class)->send(
+            userId: $technicianId,
+            title: 'New Job Assignment',
+            body: 'You have been assigned to a new service request.',
+            type: NotificationType::Booking->value,
+            data: [
+                'type' => 'booking',
+                'booking_id' => $serviceRequest->request_number,
+                'screen' => 'booking_details',
+            ],
+            eventId: $serviceRequest->request_number.'_tech_assigned_tech_'.$technicianId.'_'.now()->timestamp
+        );
+
+        $techUser = $techProfile?->user ?? User::find($technicianId);
+
+        app(EmailNotificationService::class)->sendRequestAcceptedOrAssignedToCustomer(
+            $serviceRequest,
+            $request->user(),
+            $techUser
+        );
+
+        app(EmailNotificationService::class)->sendTechnicianAssignedToTechnician(
+            $serviceRequest,
+            $techUser,
+            $request->user()
+        );
+
         return back()->with('success', 'Technician assigned successfully.');
     }
 
@@ -246,6 +321,24 @@ class ProviderRequestController extends Controller
         $jobRequest->update(['status' => ProviderJobRequestStatus::Selected]);
         $serviceRequest->update(['status' => ServiceRequestStatus::Awarded]);
 
+        app(PushNotificationService::class)->send(
+            userId: $serviceRequest->customer_id,
+            title: 'Job Accepted',
+            body: 'Your service request has been accepted by the provider.',
+            type: NotificationType::Booking->value,
+            data: [
+                'type' => 'booking',
+                'booking_id' => $serviceRequest->request_number,
+                'screen' => 'booking_details',
+            ],
+            eventId: $serviceRequest->request_number.'_accepted_'.$serviceRequest->customer_id.'_'.now()->timestamp
+        );
+
+        app(EmailNotificationService::class)->sendRequestAcceptedOrAssignedToCustomer(
+            $serviceRequest,
+            $request->user()
+        );
+
         return back()->with('success', 'Job request accepted successfully! You can now assign a technician.');
     }
 
@@ -254,7 +347,13 @@ class ProviderRequestController extends Controller
      */
     public function approveQuote(Request $request, int $quoteId, QuoteService $quoteService): RedirectResponse
     {
-        $quote = Quote::where('provider_id', $request->user()->id)->findOrFail($quoteId);
+        $quote = Quote::where(function ($q) use ($request) {
+            $q->where('provider_id', $request->user()->id)
+                ->orWhereHas('serviceRequest.jobAssignments', function ($aq) use ($request) {
+                    $aq->where('provider_id', $request->user()->id);
+                });
+        })->findOrFail($quoteId);
+
         $quoteService->approveByProvider($request->user(), $quote);
 
         return back()->with('success', 'Quotation approved successfully! It is now visible to the customer.');
@@ -277,7 +376,12 @@ class ProviderRequestController extends Controller
             'approve' => ['nullable', 'boolean'],
         ]);
 
-        $quote = Quote::where('provider_id', $request->user()->id)->findOrFail($quoteId);
+        $quote = Quote::where(function ($q) use ($request) {
+            $q->where('provider_id', $request->user()->id)
+                ->orWhereHas('serviceRequest.jobAssignments', function ($aq) use ($request) {
+                    $aq->where('provider_id', $request->user()->id);
+                });
+        })->findOrFail($quoteId);
         $shouldApprove = $request->boolean('approve');
 
         $quoteService->updateQuoteByProvider(
@@ -440,17 +544,23 @@ class ProviderRequestController extends Controller
             $total = $subtotal + $tax;
         }
 
-        $depositPaid = min(250.00, $total > 0 ? $total : 250.00);
+        $tipAmount = (float) ($invoice?->tip_amount ?? 0);
+        if ($invoice && (float) $invoice->total > 0) {
+            $total = (float) $invoice->total;
+        } else {
+            $total = round($subtotal + $tax - $discount + $tipAmount, 2);
+        }
+        $depositPaid = min($serviceRequest->depositPaidAmount(), $total);
 
         $pdfData = [
             'invoiceNumber' => $invoiceNumber,
             'requestNumber' => $requestNumber,
-            'dateIssued' => now()->format('M d, Y'),
+            'dateIssued' => BusinessTime::now($serviceRequest->localTimezone())->format('M d, Y'),
             'customerName' => $customer?->name ?? 'Valued Customer',
             'customerEmail' => $customer?->email ?? 'customer@example.com',
             'customerPhone' => $customer?->phone ?? 'N/A',
             'serviceAddress' => $serviceRequest->address_line ?? 'Customer Address',
-            'providerName' => $provider?->name ?? 'On Demand Provider',
+            'providerName' => $provider?->name ?? 'Grab A Hand Provider',
             'technicianName' => $technician?->name ?? 'Assigned Technician',
             'serviceTitle' => $serviceRequest->service?->name ?? $serviceRequest->description ?? 'On-Demand Service',
             'categoryName' => $serviceRequest->category?->name ?? 'General Maintenance',
@@ -458,6 +568,7 @@ class ProviderRequestController extends Controller
             'subtotal' => $subtotal,
             'tax' => $tax,
             'discount' => $discount,
+            'tipAmount' => $tipAmount,
             'total' => $total,
             'depositPaid' => $depositPaid,
         ];
@@ -470,5 +581,124 @@ class ProviderRequestController extends Controller
         }
 
         return $pdf->download($filename);
+    }
+
+    /**
+     * Trigger push notification to customer for chat message sent from provider panel.
+     */
+    public function notifyChat(Request $request, int $id, PushNotificationService $notificationService): JsonResponse
+    {
+        $validated = $request->validate([
+            'message' => ['required', 'string'],
+        ]);
+
+        $jobRequest = ProviderJobRequest::with('serviceRequest.customer')
+            ->where('provider_id', $request->user()->id)
+            ->findOrFail($id);
+
+        $serviceRequest = $jobRequest->serviceRequest;
+        $customer = $serviceRequest->customer;
+
+        if ($customer) {
+            $notificationService->send(
+                userId: (string) $customer->id,
+                title: $request->user()->name ?? 'Provider Message',
+                body: $validated['message'],
+                type: NotificationType::Message->value,
+                data: [
+                    'type' => NotificationType::Message->value,
+                    'booking_id' => $serviceRequest->request_number,
+                    'job_id' => $serviceRequest->request_number,
+                    'sender_id' => (string) $request->user()->id,
+                    'receiver_id' => (string) $customer->id,
+                    'screen' => 'chat',
+                ]
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Chat push notification sent to customer.',
+        ]);
+    }
+
+    /**
+     * Send chat message from provider panel (writes to Firestore via backend & dispatches push notification).
+     */
+    public function sendChat(Request $request, int $id, PushNotificationService $notificationService): JsonResponse
+    {
+        $validated = $request->validate([
+            'message' => ['required', 'string', 'max:2000'],
+        ]);
+
+        $providerId = $request->user()->id;
+
+        // Support lookup by either ProviderJobRequest ID or ServiceRequest ID
+        $jobRequest = ProviderJobRequest::with('serviceRequest.customer')
+            ->where('provider_id', $providerId)
+            ->find($id);
+
+        if (! $jobRequest) {
+            $serviceRequest = ServiceRequest::with('customer')
+                ->where('id', $id)
+                ->where(function ($q) use ($providerId) {
+                    $q->where('target_provider_id', $providerId)
+                        ->orWhereHas('jobAssignments', fn ($aq) => $aq->where('provider_id', $providerId))
+                        ->orWhereHas('providerJobRequests', fn ($pq) => $pq->where('provider_id', $providerId));
+                })
+                ->firstOrFail();
+        } else {
+            $serviceRequest = $jobRequest->serviceRequest;
+        }
+
+        $customer = $serviceRequest->customer;
+        $customerId = $customer?->id ?? $serviceRequest->customer_id;
+        $provider = $request->user();
+
+        if (! $customerId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Customer for this service request could not be identified.',
+            ], 422);
+        }
+
+        $firestoreWritten = $notificationService->sendFirestoreMessage(
+            jobId: $serviceRequest->request_number,
+            senderId: (string) $provider->id,
+            receiverId: (string) $customerId,
+            message: $validated['message']
+        );
+
+        if (! $firestoreWritten) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to persist message to chat server. Please retry.',
+            ], 500);
+        }
+
+        // Send FCM push notification (non-blocking / error-tolerant)
+        try {
+            $notificationService->send(
+                userId: (string) $customerId,
+                title: $provider->name ?? 'Provider Message',
+                body: $validated['message'],
+                type: NotificationType::Message->value,
+                data: [
+                    'type' => NotificationType::Message->value,
+                    'booking_id' => $serviceRequest->request_number,
+                    'job_id' => $serviceRequest->request_number,
+                    'sender_id' => (string) $provider->id,
+                    'receiver_id' => (string) $customerId,
+                    'screen' => 'chat',
+                ]
+            );
+        } catch (\Throwable $e) {
+            Log::warning('sendChat: Push notification dispatch notice', ['error' => $e->getMessage()]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Chat message sent successfully.',
+        ]);
     }
 }

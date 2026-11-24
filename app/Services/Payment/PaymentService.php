@@ -4,6 +4,7 @@ namespace App\Services\Payment;
 
 use App\Enums\InvoiceStatus;
 use App\Enums\PaymentStatus;
+use App\Enums\PaymentType;
 use App\Enums\ServiceRequestStatus;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -15,7 +16,9 @@ use InvalidArgumentException;
 class PaymentService
 {
     /**
-     * Record payment and update provider earnings idempotently.
+     * Record a successful balance payment against an invoice and finalize it.
+     *
+     * The booking deposit already collected for the request counts toward the invoice total.
      */
     public function recordPayment(Invoice $invoice, string $transactionId, float $amount, string $gateway = 'stripe', array $details = []): Payment
     {
@@ -26,12 +29,16 @@ class PaymentService
                 return $existing;
             }
 
-            if ($amount < (float) $invoice->total) {
+            $depositPaid = (float) ($invoice->serviceRequest?->depositPaidAmount() ?? 0.0);
+
+            if (round($amount + $depositPaid, 2) < (float) $invoice->total) {
                 throw new InvalidArgumentException('Payment amount is less than invoice total.');
             }
 
             $payment = Payment::create([
                 'invoice_id' => $invoice->id,
+                'service_request_id' => $invoice->service_request_id,
+                'type' => PaymentType::Balance,
                 'customer_id' => $invoice->customer_id,
                 'payment_gateway' => $gateway,
                 'transaction_id' => $transactionId,
@@ -41,8 +48,33 @@ class PaymentService
                 'paid_at' => now(),
             ]);
 
+            $this->finalizeInvoice($invoice);
+
+            return $payment;
+        });
+    }
+
+    /**
+     * Mark an invoice as paid, complete its request and book provider earnings (idempotent).
+     */
+    public function finalizeInvoice(Invoice $invoice): Invoice
+    {
+        return DB::transaction(function () use ($invoice) {
             $invoice->update(['status' => InvoiceStatus::Paid]);
             $invoice->serviceRequest->update(['status' => ServiceRequestStatus::Completed]);
+
+            if (ProviderEarning::where('invoice_id', $invoice->id)->exists()) {
+                return $invoice;
+            }
+
+            // Ensure invoice has valid provider_id (auto-resolve if missing or erroneously set to customer)
+            if (! $invoice->provider_id || (int) $invoice->provider_id === (int) $invoice->customer_id) {
+                $resolvedProviderId = $invoice->serviceRequest?->resolveProviderId();
+                if ($resolvedProviderId) {
+                    $invoice->update(['provider_id' => $resolvedProviderId]);
+                    $invoice->refresh();
+                }
+            }
 
             // Calculate provider earnings based on provider's custom commission rate (default 10%)
             $providerProfile = ProviderProfile::where('user_id', $invoice->provider_id)->first();
@@ -77,7 +109,7 @@ class PaymentService
                 'net_amount' => $netAmount,
             ]);
 
-            return $payment;
+            return $invoice;
         });
     }
 }

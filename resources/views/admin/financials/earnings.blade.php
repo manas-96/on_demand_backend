@@ -43,7 +43,7 @@
                             ${{ number_format($e->net_amount, 2) }}
                         </td>
                         <td class="px-6 py-4 text-right text-xs text-slate-400">
-                            {{ $e->created_at->format('M d, Y H:i') }}
+                            {{ $e->created_at->inDisplayTimezone()->format('M d, Y H:i') }}
                         </td>
                     </tr>
                 @empty

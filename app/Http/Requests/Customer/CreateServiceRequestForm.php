@@ -8,7 +8,25 @@ class CreateServiceRequestForm extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->isCustomer() ?? false;
+        return $this->user() !== null;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('preferred_date') && is_string($this->preferred_date)) {
+            $val = trim($this->preferred_date);
+            // Convert DD/MM/YYYY or DD-MM-YYYY to YYYY-MM-DD
+            if (preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/', $val, $matches)) {
+                $day = (int) $matches[1];
+                $month = (int) $matches[2];
+                $year = (int) $matches[3];
+                if (checkdate($month, $day, $year)) {
+                    $this->merge([
+                        'preferred_date' => sprintf('%04d-%02d-%02d', $year, $month, $day),
+                    ]);
+                }
+            }
+        }
     }
 
     public function rules(): array
@@ -27,6 +45,7 @@ class CreateServiceRequestForm extends FormRequest
             'preferred_start_time' => ['nullable', 'date_format:H:i'],
             'preferred_end_time' => ['nullable', 'date_format:H:i'],
             'priority' => ['nullable', 'string', 'in:low,normal,high,urgent'],
+            'timezone' => ['nullable', 'string', 'timezone:all'],
             'photos' => ['nullable', 'array', 'max:10'],
             'photos.*' => ['nullable'],
         ];
