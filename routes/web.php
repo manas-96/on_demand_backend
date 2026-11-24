@@ -26,6 +26,7 @@ use App\Http\Controllers\Provider\ProviderSupportController;
 use App\Http\Controllers\Provider\ProviderTechnicianController;
 use App\Http\Controllers\SupportController;
 use App\Http\Controllers\Web\WebAuthController;
+use App\Http\Middleware\EnsureProviderIsOnboarded;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\EnsureUserIsProvider;
 use Illuminate\Support\Facades\Route;
@@ -40,12 +41,12 @@ use Illuminate\Support\Str;
 // Landing Page with Login & Registration Options
 Route::get('/', [WebAuthController::class, 'landing'])->name('landing');
 Route::get('/login', [WebAuthController::class, 'landing'])->name('login');
-Route::post('/login', [WebAuthController::class, 'login'])->name('login.post');
+Route::post('/login', [WebAuthController::class, 'login'])->middleware('throttle:10,1')->name('login.post');
 Route::post('/logout', [WebAuthController::class, 'logout'])->name('logout');
 
 // Public Provider Self-Registration
 Route::get('/register/provider', [ProviderRegistrationController::class, 'showRegistrationForm'])->name('register.provider');
-Route::post('/register/provider', [ProviderRegistrationController::class, 'register'])->name('register.provider.post');
+Route::post('/register/provider', [ProviderRegistrationController::class, 'register'])->middleware('throttle:5,10')->name('register.provider.post');
 
 // Public Privacy Policy Page
 Route::get('/privacy-policy', [PrivacyPolicyController::class, 'show'])->name('privacy-policy');
@@ -183,7 +184,15 @@ Route::middleware(['auth', EnsureUserIsAdmin::class])->prefix('admin')->name('ad
 });
 
 // Protected Provider Web Routes
-Route::middleware(['auth', EnsureUserIsProvider::class])->prefix('provider')->name('provider.')->group(function () {
+// Provider onboarding (signed in, but not yet verified/approved)
+Route::middleware(['auth', EnsureUserIsProvider::class])->prefix('provider/onboarding')->name('provider.onboarding.')->group(function () {
+    Route::get('/verify-email', [ProviderRegistrationController::class, 'showVerifyEmail'])->name('verify-email');
+    Route::post('/verify-email', [ProviderRegistrationController::class, 'verifyEmail'])->middleware('throttle:10,1')->name('verify-email.submit');
+    Route::post('/verify-email/resend', [ProviderRegistrationController::class, 'resendVerificationCode'])->middleware('throttle:3,1')->name('verify-email.resend');
+    Route::get('/pending', [ProviderRegistrationController::class, 'pending'])->name('pending');
+});
+
+Route::middleware(['auth', EnsureUserIsProvider::class, EnsureProviderIsOnboarded::class])->prefix('provider')->name('provider.')->group(function () {
     Route::get('/', function () {
         return redirect()->route('provider.dashboard');
     });

@@ -10,6 +10,7 @@ use App\Models\Service;
 use App\Models\ServiceCategory;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Services\EmailNotificationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -111,6 +112,9 @@ class AdminProviderController extends Controller
                 'is_active' => true,
             ]);
 
+            // Created by an admin, so the address is trusted and no OTP step is needed.
+            $user->markEmailAsVerified();
+
             $providerProfile = ProviderProfile::create([
                 'user_id' => $user->id,
                 'company_name' => $validated['company_name'],
@@ -125,7 +129,8 @@ class AdminProviderController extends Controller
             ]);
 
             if (! empty($validated['categories'])) {
-                $serviceIds = Service::whereIn('service_category_id', $validated['categories'])->pluck('id');
+                $categoryIds = ServiceCategory::whereIn('parent_id', $validated['categories'])->pluck('id')->merge($validated['categories'])->unique();
+                $serviceIds = Service::whereIn('service_category_id', $categoryIds)->pluck('id');
                 foreach ($serviceIds as $serviceId) {
                     ProviderService::create([
                         'provider_profile_id' => $providerProfile->id,
@@ -231,10 +236,14 @@ class AdminProviderController extends Controller
 
     public function toggleApproval(int $id): RedirectResponse
     {
-        $profile = ProviderProfile::findOrFail($id);
+        $profile = ProviderProfile::with('user')->findOrFail($id);
         $profile->update(['is_approved' => ! $profile->is_approved]);
 
         $status = $profile->is_approved ? 'approved' : 'unapproved';
+
+        if ($profile->is_approved) {
+            app(EmailNotificationService::class)->sendProviderApproved($profile);
+        }
 
         return back()->with('success', "Provider {$profile->company_name} is now {$status}.");
     }

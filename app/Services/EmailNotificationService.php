@@ -2,15 +2,19 @@
 
 namespace App\Services;
 
+use App\Enums\UserRole;
 use App\Mail\BookingCancelledMail;
 use App\Mail\BookingCompletedMail;
 use App\Mail\BookingCreatedCustomerMail;
+use App\Mail\ProviderApprovedMail;
+use App\Mail\ProviderRegisteredAdminMail;
 use App\Mail\QuoteAcceptedByCustomerProviderMail;
 use App\Mail\QuoteApprovedByProviderCustomerMail;
 use App\Mail\RequestAcceptedOrAssignedCustomerMail;
 use App\Mail\ServiceRequestCreatedProviderMail;
 use App\Mail\TechnicianAssignedMail;
 use App\Models\JobAssignment;
+use App\Models\ProviderProfile;
 use App\Models\ServiceRequest;
 use App\Models\User;
 use Illuminate\Support\Collection;
@@ -362,6 +366,57 @@ class EmailNotificationService
         } catch (Throwable $e) {
             Log::error('EmailNotificationService sendBookingCompleted failed: '.$e->getMessage(), [
                 'request_id' => $serviceRequest->id,
+            ]);
+        }
+    }
+
+    /**
+     * Tell every active admin that a self-registered provider verified their email and awaits approval.
+     */
+    public function sendProviderRegisteredToAdmins(ProviderProfile $providerProfile): void
+    {
+        $providerProfile->loadMissing('user');
+
+        $admins = User::where('role', UserRole::Admin)->where('is_active', true)->whereNotNull('email')->get();
+
+        foreach ($admins as $admin) {
+            if (! $this->shouldSendEmail('provider_registered_admin', $providerProfile->id, $admin->email)) {
+                continue;
+            }
+
+            try {
+                Mail::to($admin->email)->send(new ProviderRegisteredAdminMail($providerProfile, $admin));
+            } catch (Throwable $e) {
+                $this->releaseDeduplicationLock('provider_registered_admin', $providerProfile->id, $admin->email);
+                Log::error('EmailNotificationService sendProviderRegisteredToAdmins failed: '.$e->getMessage(), [
+                    'provider_profile_id' => $providerProfile->id,
+                    'admin_id' => $admin->id,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Tell a provider their account was approved by an admin.
+     */
+    public function sendProviderApproved(ProviderProfile $providerProfile): void
+    {
+        $provider = $providerProfile->user;
+
+        if (! $provider || empty($provider->email)) {
+            return;
+        }
+
+        if (! $this->shouldSendEmail('provider_approved', $providerProfile->id, $provider->email)) {
+            return;
+        }
+
+        try {
+            Mail::to($provider->email)->send(new ProviderApprovedMail($providerProfile, $provider));
+        } catch (Throwable $e) {
+            $this->releaseDeduplicationLock('provider_approved', $providerProfile->id, $provider->email);
+            Log::error('EmailNotificationService sendProviderApproved failed: '.$e->getMessage(), [
+                'provider_profile_id' => $providerProfile->id,
             ]);
         }
     }
