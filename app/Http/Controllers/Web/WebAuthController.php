@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers\Web;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
 
 class WebAuthController extends Controller
@@ -36,36 +40,48 @@ class WebAuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        if (Auth::attempt($credentials, $request->boolean('remember'))) {
-            $user = Auth::user();
+        // One email can have several accounts (one per role); the web panel only signs in admin or provider
+        // accounts, preferring admin when both exist.
+        $panelCredentials = [
+            'email' => $credentials['email'],
+            'password' => $credentials['password'],
+            fn (Builder $query) => $query
+                ->whereIn('role', [UserRole::Admin->value, UserRole::Provider->value])
+                ->orderByRaw('case when role = ? then 0 else 1 end', [UserRole::Admin->value]),
+        ];
 
-            $refusal = match (true) {
-                ! $user->is_active => 'Your account has been deactivated. Please contact support.',
-                ! $user->isAdmin() && ! $user->isProvider() => 'This web panel is for providers and admins. Please sign in with the Grab A Hand mobile app.',
-                default => null,
-            };
+        if (! Auth::attempt($panelCredentials, $request->boolean('remember'))) {
+            // Correct password but only customer/technician accounts: point them to the app.
+            $mobileOnly = User::where('email', $credentials['email'])
+                ->whereIn('role', [UserRole::Customer->value, UserRole::Technician->value])
+                ->get()
+                ->contains(fn (User $account) => Hash::check($credentials['password'], $account->password));
 
-            if ($refusal) {
-                Auth::guard('web')->logout();
-                $request->session()->invalidate();
-                $request->session()->regenerateToken();
-
-                return back()->withErrors(['email' => $refusal])->onlyInput('email');
-            }
-
-            $request->session()->regenerate();
-
-            if ($user->isAdmin()) {
-                return redirect()->intended('/admin');
-            }
-
-            // Unverified / unapproved providers are routed to onboarding by EnsureProviderIsOnboarded.
-            return redirect()->intended('/provider');
+            return back()->withErrors([
+                'email' => $mobileOnly
+                    ? 'This web panel is for providers and admins. Please sign in with the Grab A Hand mobile app.'
+                    : 'The provided credentials do not match our records.',
+            ])->onlyInput('email');
         }
 
-        return back()->withErrors([
-            'email' => 'The provided credentials do not match our records.',
-        ])->onlyInput('email');
+        $user = Auth::user();
+
+        if (! $user->is_active) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return back()->withErrors(['email' => 'Your account has been deactivated. Please contact support.'])->onlyInput('email');
+        }
+
+        $request->session()->regenerate();
+
+        if ($user->isAdmin()) {
+            return redirect()->intended('/admin');
+        }
+
+        // Unverified / unapproved providers are routed to onboarding by EnsureProviderIsOnboarded.
+        return redirect()->intended('/provider');
     }
 
     /**

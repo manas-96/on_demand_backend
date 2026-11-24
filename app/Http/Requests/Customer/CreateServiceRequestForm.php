@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Customer;
 
+use App\Models\User;
+use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 
 class CreateServiceRequestForm extends FormRequest
@@ -36,7 +38,15 @@ class CreateServiceRequestForm extends FormRequest
             'sub_category_id' => ['nullable', 'exists:service_categories,id'],
             'service_id' => ['nullable', 'exists:services,id'],
             'request_type' => ['required', 'in:broadcast,direct'],
-            'target_provider_id' => ['required_if:request_type,direct', 'nullable', 'exists:users,id'],
+            'target_provider_id' => [
+                'required_if:request_type,direct', 'nullable', 'exists:users,id',
+                // No self-dealing: a customer cannot book their own provider company (same email).
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if ($value && User::whereKey($value)->value('email') === $this->user()?->email) {
+                        $fail('You cannot book your own company.');
+                    }
+                },
+            ],
             'description' => ['required', 'string', 'max:2000'],
             'address_line' => ['required', 'string', 'max:500'],
             'latitude' => ['required', 'numeric', 'between:-90,90'],

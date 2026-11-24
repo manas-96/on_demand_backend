@@ -31,10 +31,11 @@ class EmailOtpService
     {
         $otp = (string) random_int(100000, 999999);
 
-        EmailOtp::where('email', $user->email)->delete();
+        EmailOtp::forUser($user)->delete();
 
         EmailOtp::create([
             'email' => $user->email,
+            'role' => $user->role->value,
             'otp' => $otp,
             'attempts' => 0,
             'expires_at' => now()->addMinutes(self::TTL_MINUTES),
@@ -56,7 +57,7 @@ class EmailOtpService
      */
     public function secondsUntilResend(User $user): int
     {
-        $existing = EmailOtp::where('email', $user->email)->first();
+        $existing = EmailOtp::forUser($user)->first();
 
         if (! $existing?->created_at) {
             return 0;
@@ -70,7 +71,7 @@ class EmailOtpService
      */
     public function verify(User $user, string $code): string
     {
-        $record = EmailOtp::where('email', $user->email)->first();
+        $record = EmailOtp::forUser($user)->first();
 
         if (! $record || now()->isAfter($record->expires_at)) {
             $record?->delete();

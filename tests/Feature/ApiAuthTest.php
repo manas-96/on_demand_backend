@@ -64,6 +64,7 @@ class ApiAuthTest extends TestCase
 
         EmailOtp::create([
             'email' => 'john@example.com',
+            'role' => 'customer',
             'otp' => '123456',
             'attempts' => 0,
             'expires_at' => now()->addMinutes(10),
@@ -97,6 +98,7 @@ class ApiAuthTest extends TestCase
 
         $otpRecord = EmailOtp::create([
             'email' => 'john@example.com',
+            'role' => 'customer',
             'otp' => '123456',
             'attempts' => 0,
             'expires_at' => now()->addMinutes(10),
@@ -120,6 +122,7 @@ class ApiAuthTest extends TestCase
 
         EmailOtp::create([
             'email' => 'john@example.com',
+            'role' => 'customer',
             'otp' => '123456',
             'attempts' => 0,
             'expires_at' => now()->subMinute(),
@@ -161,6 +164,7 @@ class ApiAuthTest extends TestCase
 
         EmailOtp::create([
             'email' => 'john@example.com',
+            'role' => 'customer',
             'otp' => '123456',
             'attempts' => 0,
             'expires_at' => now()->addMinutes(10),
@@ -214,6 +218,7 @@ class ApiAuthTest extends TestCase
 
         EmailOtp::create([
             'email' => 'user@example.com',
+            'role' => 'customer',
             'otp' => '654321',
             'attempts' => 0,
             'expires_at' => now()->addMinutes(10),
@@ -325,6 +330,7 @@ class ApiAuthTest extends TestCase
 
         EmailOtp::create([
             'email' => 'resetuser@example.com',
+            'role' => 'customer',
             'otp' => '123456',
             'attempts' => 0,
             'expires_at' => now()->addMinutes(10),
@@ -358,6 +364,7 @@ class ApiAuthTest extends TestCase
 
         EmailOtp::create([
             'email' => 'resetuser@example.com',
+            'role' => 'customer',
             'otp' => '123456',
             'attempts' => 0,
             'expires_at' => now()->addMinutes(10),

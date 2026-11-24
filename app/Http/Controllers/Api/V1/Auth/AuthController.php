@@ -14,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
@@ -23,10 +24,15 @@ class AuthController extends Controller
      */
     public function register(Request $request): JsonResponse
     {
+        $requestedRole = in_array($request->input('role'), ['customer', 'provider', 'technician'], true)
+            ? $request->input('role')
+            : UserRole::Customer->value;
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'phone' => ['nullable', 'string', 'max:50', 'unique:users,phone'],
+            // The same email/phone may be reused for a different role (separate account).
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->where('role', $requestedRole)],
+            'phone' => ['nullable', 'string', 'max:50', Rule::unique('users', 'phone')->where('role', $requestedRole)],
             'password' => ['required', 'string', Password::defaults(), 'confirmed'],
             'role' => ['nullable', 'string', 'in:customer,provider,technician'],
         ]);
@@ -45,10 +51,11 @@ class AuthController extends Controller
 
         $otp = (string) random_int(100000, 999999);
 
-        EmailOtp::where('email', $user->email)->delete();
+        EmailOtp::forUser($user)->delete();
 
         EmailOtp::create([
             'email' => $user->email,
+            'role' => $user->role->value,
             'otp' => $otp,
             'attempts' => 0,
             'expires_at' => now()->addMinutes(10),
@@ -81,10 +88,11 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'email' => ['required', 'string', 'email'],
+            'role' => ['nullable', 'string', Rule::enum(UserRole::class)],
             'otp' => ['required', 'string', 'size:6'],
         ]);
 
-        $user = User::where('email', $validated['email'])->first();
+        $user = User::findForAuth($validated['email'], $validated['role'] ?? null);
 
         if (! $user) {
             return response()->json([
@@ -93,7 +101,7 @@ class AuthController extends Controller
             ], 404);
         }
 
-        $otpRecord = EmailOtp::where('email', $validated['email'])->first();
+        $otpRecord = EmailOtp::forUser($user)->first();
 
         if (! $otpRecord || now()->isAfter($otpRecord->expires_at)) {
             if ($otpRecord) {
@@ -146,9 +154,10 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'email' => ['required', 'string', 'email'],
+            'role' => ['nullable', 'string', Rule::enum(UserRole::class)],
         ]);
 
-        $user = User::where('email', $validated['email'])->first();
+        $user = User::findForAuth($validated['email'], $validated['role'] ?? null);
 
         if (! $user) {
             return response()->json([
@@ -157,7 +166,7 @@ class AuthController extends Controller
             ], 404);
         }
 
-        $existing = EmailOtp::where('email', $user->email)->first();
+        $existing = EmailOtp::forUser($user)->first();
 
         if ($existing && $existing->created_at && $existing->created_at->diffInSeconds(now()) < 60) {
             $secondsRemaining = 60 - (int) $existing->created_at->diffInSeconds(now());
@@ -170,10 +179,11 @@ class AuthController extends Controller
 
         $otp = (string) random_int(100000, 999999);
 
-        EmailOtp::where('email', $user->email)->delete();
+        EmailOtp::forUser($user)->delete();
 
         EmailOtp::create([
             'email' => $user->email,
+            'role' => $user->role->value,
             'otp' => $otp,
             'attempts' => 0,
             'expires_at' => now()->addMinutes(10),
@@ -209,9 +219,19 @@ class AuthController extends Controller
             ], 422);
         }
 
-        $user = User::where('email', $loginInput)
-            ->orWhere('phone', $loginInput)
-            ->first();
+        $role = $request->filled('role') ? (string) $request->input('role') : null;
+        $user = User::findForAuth($loginInput, $role);
+
+        // Right credentials, wrong app: say so instead of "invalid credentials".
+        if (! $user && $role) {
+            $otherAccount = User::findForAuth($loginInput);
+            if ($otherAccount && Hash::check($request->password, $otherAccount->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Access denied. Account is not registered as a '.$role.'.',
+                ], 403);
+            }
+        }
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             return response()->json([
@@ -238,10 +258,11 @@ class AuthController extends Controller
         if ($user->role === UserRole::Customer) {
             $otp = (string) random_int(100000, 999999);
 
-            EmailOtp::where('email', $user->email)->delete();
+            EmailOtp::forUser($user)->delete();
 
             EmailOtp::create([
                 'email' => $user->email,
+                'role' => $user->role->value,
                 'otp' => $otp,
                 'attempts' => 0,
                 'expires_at' => now()->addMinutes(10),
@@ -312,9 +333,10 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'email' => ['required', 'string', 'email'],
+            'role' => ['nullable', 'string', Rule::enum(UserRole::class)],
         ]);
 
-        $user = User::where('email', $validated['email'])->first();
+        $user = User::findForAuth($validated['email'], $validated['role'] ?? null);
 
         if (! $user) {
             return response()->json([
@@ -330,7 +352,7 @@ class AuthController extends Controller
             ], 403);
         }
 
-        $existing = EmailOtp::where('email', $user->email)->first();
+        $existing = EmailOtp::forUser($user)->first();
 
         if ($existing && $existing->created_at && $existing->created_at->diffInSeconds(now()) < 60) {
             $secondsRemaining = 60 - (int) $existing->created_at->diffInSeconds(now());
@@ -343,10 +365,11 @@ class AuthController extends Controller
 
         $otp = (string) random_int(100000, 999999);
 
-        EmailOtp::where('email', $user->email)->delete();
+        EmailOtp::forUser($user)->delete();
 
         EmailOtp::create([
             'email' => $user->email,
+            'role' => $user->role->value,
             'otp' => $otp,
             'attempts' => 0,
             'expires_at' => now()->addMinutes(10),
@@ -378,11 +401,12 @@ class AuthController extends Controller
     {
         $validated = $request->validate([
             'email' => ['required', 'string', 'email'],
+            'role' => ['nullable', 'string', Rule::enum(UserRole::class)],
             'otp' => ['required', 'string', 'size:6'],
             'password' => ['required', 'string', Password::defaults(), 'confirmed'],
         ]);
 
-        $user = User::where('email', $validated['email'])->first();
+        $user = User::findForAuth($validated['email'], $validated['role'] ?? null);
 
         if (! $user) {
             return response()->json([
@@ -391,7 +415,7 @@ class AuthController extends Controller
             ], 404);
         }
 
-        $otpRecord = EmailOtp::where('email', $validated['email'])->first();
+        $otpRecord = EmailOtp::forUser($user)->first();
 
         if (! $otpRecord || now()->isAfter($otpRecord->expires_at)) {
             if ($otpRecord) {

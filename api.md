@@ -68,6 +68,13 @@ Accept: application/json
 - Apps send `X-Timezone: <IANA zone>` (e.g. `America/Chicago`) on every request. The backend uses it for "today" / "this week" filters and saves it as the booking's `timezone` when a request is created (an explicit `timezone` field in `POST /customer/requests` wins). Unknown values are ignored.
 - Business rules for a booking (e.g. technician assignment unlocking on `preferred_date`) use the booking's `timezone`. Web panels, emails and PDFs use `DISPLAY_TIMEZONE` (default `America/New_York`).
 
+### Accounts and roles
+- One email (or phone) can own **one account per role**: e.g. `x@x.com` can be a customer and a provider at the same time, but never two customers. These are separate accounts with separate passwords, OTP codes and tokens.
+- Send `role` (`customer` | `provider` | `technician` | `admin`) with **every** auth call — `register`, `login`, `verify-email-otp`, `resend-email-otp`, `forgot-password`, `reset-password` — so the backend picks the right account. If `role` is omitted and the email has several accounts, the customer account is used (for older app builds).
+- Login with the right password for a *different* role returns `403` "Access denied. Account is not registered as a {role}."
+- The provider web panel signs in admin/provider accounts only (admin first if an email has both).
+- A customer's request is never offered to a provider company owned by the same email, and a direct request to it is rejected with `422` "You cannot book your own company."
+
 ## 2. Authentication APIs
 
 ### POST `/api/v1/auth/login`
