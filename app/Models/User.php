@@ -75,6 +75,26 @@ class User extends Authenticatable implements MustVerifyEmail
     /**
      * Check if user is a Service Provider.
      */
+    /**
+     * Resolve the account a login / OTP / password-reset request refers to.
+     *
+     * One email (or phone) may have one account per role. Clients should send the role; older customer-app
+     * builds don't, so when the role is missing and several accounts match, the customer account is used.
+     */
+    public static function findForAuth(string $login, ?string $role = null): ?self
+    {
+        $matches = static::query()
+            ->where(fn ($query) => $query->where('email', $login)->orWhere('phone', $login))
+            ->when($role, fn ($query) => $query->where('role', $role))
+            ->get();
+
+        if ($matches->count() <= 1) {
+            return $matches->first();
+        }
+
+        return $matches->first(fn (self $user) => $user->role === UserRole::Customer);
+    }
+
     public function isProvider(): bool
     {
         return $this->role === UserRole::Provider;

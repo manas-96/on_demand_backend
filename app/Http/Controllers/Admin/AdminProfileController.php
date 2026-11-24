@@ -26,8 +26,8 @@ class AdminProfileController extends Controller
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
-            'phone' => ['nullable', 'string', 'max:50', Rule::unique('users', 'phone')->ignore($user->id)],
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->where('role', $user->role->value)->ignore($user->id)],
+            'phone' => ['nullable', 'string', 'max:50', Rule::unique('users', 'phone')->where('role', $user->role->value)->ignore($user->id)],
         ]);
 
         $user->update([

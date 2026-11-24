@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
@@ -54,8 +55,8 @@ class ProviderRegistrationController extends Controller
             'longitude' => ['required', 'numeric', 'between:-180,180'],
             'service_radius_km' => ['required', 'numeric', 'min:1', 'max:500'],
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'phone' => ['nullable', 'string', 'max:50', 'unique:users,phone'],
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->where('role', UserRole::Provider->value)],
+            'phone' => ['nullable', 'string', 'max:50', Rule::unique('users', 'phone')->where('role', UserRole::Provider->value)],
             'password' => ['required', 'string', Password::defaults(), 'confirmed'],
             'categories' => ['required', 'array', 'min:1'],
             'categories.*' => ['integer', 'exists:service_categories,id'],

@@ -21,12 +21,21 @@ class ProviderMatchingService
      */
     public function matchEligibleProviders(ServiceRequest $serviceRequest): Collection
     {
+        // No self-dealing: never offer a customer's job to a provider company owned by the same person (same email).
+        $customerEmail = $serviceRequest->customer()->value('email');
+        $excludeOwnCompany = function ($query) use ($customerEmail): void {
+            if ($customerEmail) {
+                $query->whereDoesntHave('user', fn ($user) => $user->where('email', $customerEmail));
+            }
+        };
+
         // 1. Direct Request: Match targeted provider directly if specified
         if ($serviceRequest->target_provider_id) {
             $directProfiles = ProviderProfile::query()
                 ->with(['user', 'technicians'])
                 ->where('user_id', $serviceRequest->target_provider_id)
                 ->where('is_approved', true)
+                ->tap($excludeOwnCompany)
                 ->get();
 
             if ($directProfiles->isNotEmpty()) {
@@ -57,6 +66,7 @@ class ProviderMatchingService
         $query = ProviderProfile::query()
             ->with(['user', 'technicians'])
             ->where('is_approved', true)
+            ->tap($excludeOwnCompany)
             ->where('is_accepting_jobs', true);
 
         if ($hasCoordinates) {
@@ -91,6 +101,7 @@ class ProviderMatchingService
             $results = ProviderProfile::query()
                 ->with(['user', 'technicians'])
                 ->where('is_approved', true)
+                ->tap($excludeOwnCompany)
                 ->where('is_accepting_jobs', true)
                 ->where(function ($q) use ($allCategoryIds, $serviceId) {
                     if (! empty($allCategoryIds)) {
@@ -112,6 +123,7 @@ class ProviderMatchingService
             $results = ProviderProfile::query()
                 ->with(['user', 'technicians'])
                 ->where('is_approved', true)
+                ->tap($excludeOwnCompany)
                 ->where('is_accepting_jobs', true)
                 ->get();
         }

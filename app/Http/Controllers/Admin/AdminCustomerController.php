@@ -10,6 +10,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class AdminCustomerController extends Controller
@@ -40,8 +41,8 @@ class AdminCustomerController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'phone' => ['nullable', 'string', 'max:50', 'unique:users,phone'],
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->where('role', UserRole::Customer->value)],
+            'phone' => ['nullable', 'string', 'max:50', Rule::unique('users', 'phone')->where('role', UserRole::Customer->value)],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'address_line' => ['nullable', 'string', 'max:1000'],
         ]);

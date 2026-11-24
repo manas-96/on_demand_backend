@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\UserRole;
 use App\Models\ProviderProfile;
+use App\Models\ServiceCategory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -53,20 +54,17 @@ class UniquePhoneNumberTest extends TestCase
         $response->assertJsonValidationErrors(['phone']);
     }
 
-    public function test_web_provider_registration_fails_when_phone_is_already_taken(): void
+    public function test_web_provider_registration_fails_when_phone_is_already_taken_by_a_provider(): void
     {
-        $response = $this->post('/register/provider', [
-            'company_name' => 'Duplicate Phone Care',
-            'address' => '123 Main St',
-            'service_radius_km' => 25,
-            'name' => 'Provider Owner',
-            'email' => 'dup_provider@example.com',
-            'phone' => '+15559990000',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
-        ]);
+        User::factory()->create(['role' => UserRole::Provider, 'phone' => '+15558880000']);
 
-        $response->assertSessionHasErrors(['phone']);
+        $this->post('/register/provider', $this->providerSignup('+15558880000'))->assertSessionHasErrors(['phone']);
+    }
+
+    public function test_web_provider_registration_may_reuse_a_customers_phone(): void
+    {
+        // Same person can hold a customer and a provider account (one per role).
+        $this->post('/register/provider', $this->providerSignup('+15559990000'))->assertSessionDoesntHaveErrors(['phone']);
     }
 
     public function test_admin_creating_customer_fails_when_phone_is_already_taken(): void
@@ -82,16 +80,26 @@ class UniquePhoneNumberTest extends TestCase
         $response->assertSessionHasErrors(['phone']);
     }
 
-    public function test_provider_adding_technician_fails_when_phone_is_already_taken(): void
+    public function test_provider_adding_technician_fails_when_phone_is_already_taken_by_a_technician(): void
     {
-        $response = $this->actingAs($this->providerUser)->post('/provider/technicians', [
+        User::factory()->create(['role' => UserRole::Technician, 'phone' => '+15557770000']);
+
+        $this->actingAs($this->providerUser)->post('/provider/technicians', [
+            'name' => 'New Tech',
+            'email' => 'tech_new@example.com',
+            'phone' => '+15557770000',
+            'password' => 'password123',
+        ])->assertSessionHasErrors(['phone']);
+    }
+
+    public function test_provider_adding_technician_may_reuse_a_customers_phone(): void
+    {
+        $this->actingAs($this->providerUser)->post('/provider/technicians', [
             'name' => 'New Tech',
             'email' => 'tech_new@example.com',
             'phone' => '+15559990000',
             'password' => 'password123',
-        ]);
-
-        $response->assertSessionHasErrors(['phone']);
+        ])->assertSessionDoesntHaveErrors(['phone']);
     }
 
     public function test_user_can_update_profile_keeping_same_phone_number(): void
@@ -104,5 +112,25 @@ class UniquePhoneNumberTest extends TestCase
 
         $response->assertSessionHasNoErrors();
         $this->assertEquals('+15559990000', $this->existingUser->fresh()->phone);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function providerSignup(string $phone): array
+    {
+        return [
+            'company_name' => 'Duplicate Phone Care',
+            'address' => '123 Main St',
+            'latitude' => 40.7,
+            'longitude' => -74.0,
+            'service_radius_km' => 25,
+            'name' => 'Provider Owner',
+            'email' => 'dup_provider@example.com',
+            'phone' => $phone,
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'categories' => [ServiceCategory::create(['name' => 'Care', 'slug' => 'care-'.uniqid(), 'is_active' => true])->id],
+        ];
     }
 }

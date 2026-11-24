@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class ProviderTechnicianController extends Controller
@@ -51,8 +52,8 @@ class ProviderTechnicianController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'phone' => ['nullable', 'string', 'max:30', 'unique:users,phone'],
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')->where('role', UserRole::Technician->value)],
+            'phone' => ['nullable', 'string', 'max:30', Rule::unique('users', 'phone')->where('role', UserRole::Technician->value)],
             'password' => ['required', 'string', 'min:8'],
             'qualification' => ['nullable', 'string', 'max:255'],
         ]);
