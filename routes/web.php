@@ -173,9 +173,10 @@ Route::middleware(['auth', EnsureUserIsAdmin::class])->prefix('admin')->name('ad
 
     // Customer Support Tickets
     Route::get('/support', [AdminSupportController::class, 'index'])->name('support.index');
+    Route::get('/support/web/{supportTicket}', [AdminSupportController::class, 'showWebTicket'])->name('support.web.show');
+    Route::post('/support/web/{supportTicket}/status', [AdminSupportController::class, 'updateWebTicketStatus'])->name('support.web.update-status');
     Route::get('/support/{id}', [AdminSupportController::class, 'show'])->name('support.show');
     Route::get('/support/chat/{id}', [AdminSupportController::class, 'show'])->name('support.chat');
-    Route::post('/support/{id}/update-status', [AdminSupportController::class, 'updateStatus'])->name('support.update-status');
 
     // Profile & Password
     Route::get('/profile', [AdminProfileController::class, 'show'])->name('profile.show');

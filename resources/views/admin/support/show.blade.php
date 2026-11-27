@@ -78,8 +78,16 @@
             <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
                 <h2 class="text-sm font-bold uppercase tracking-wider text-amber-400">Update Ticket Status & Notes</h2>
                 
-                <form method="POST" action="{{ route('admin.support.update-status', $ticket->id) }}" class="space-y-4">
+                <form method="POST" action="{{ route('admin.support.web.update-status', $ticket) }}" class="space-y-4">
                     @csrf
+
+                    @if($errors->any())
+                        <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400 space-y-1">
+                            @foreach($errors->all() as $error)
+                                <div>{{ $error }}</div>
+                            @endforeach
+                        </div>
+                    @endif
 
                     <div>
                         <label for="status" class="block text-xs font-medium text-slate-300 mb-1">Target Ticket Status</label>

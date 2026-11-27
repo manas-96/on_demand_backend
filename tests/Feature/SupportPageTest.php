@@ -105,7 +105,56 @@ class SupportPageTest extends TestCase
 
     public function test_admin_can_view_and_update_support_ticket_status(): void
     {
-        $ticket = SupportTicket::create([
+        $ticket = $this->createWebTicket();
+
+        $indexResponse = $this->actingAs($this->admin)->get('/admin/support');
+        $indexResponse->assertOk();
+        $indexResponse->assertSee($ticket->ticket_number);
+
+        $showResponse = $this->actingAs($this->admin)->get("/admin/support/web/{$ticket->id}");
+        $showResponse->assertOk();
+        $showResponse->assertSee('Invoice discrepancy');
+
+        $updateResponse = $this->actingAs($this->admin)->post("/admin/support/web/{$ticket->id}/status", [
+            'status' => 'resolved',
+            'admin_notes' => 'Verified transaction log and refunded duplicate charge.',
+        ]);
+
+        $updateResponse->assertRedirect("/admin/support/web/{$ticket->id}");
+        $updateResponse->assertSessionHas('success', 'Ticket SUP-TEST-001 updated.');
+        $ticket->refresh();
+        $this->assertSame('resolved', $ticket->status);
+        $this->assertSame('Verified transaction log and refunded duplicate charge.', $ticket->admin_notes);
+    }
+
+    public function test_admin_cannot_set_an_unknown_ticket_status(): void
+    {
+        $ticket = $this->createWebTicket();
+
+        $response = $this->actingAs($this->admin)
+            ->from("/admin/support/web/{$ticket->id}")
+            ->post("/admin/support/web/{$ticket->id}/status", ['status' => 'deleted']);
+
+        $response->assertRedirect("/admin/support/web/{$ticket->id}");
+        $response->assertSessionHasErrors(['status' => 'The selected status is invalid.']);
+        $this->assertSame('open', $ticket->fresh()->status);
+    }
+
+    public function test_non_admin_cannot_update_a_website_ticket(): void
+    {
+        $ticket = $this->createWebTicket();
+
+        $response = $this->actingAs($this->customer)->post("/admin/support/web/{$ticket->id}/status", [
+            'status' => 'closed',
+        ]);
+
+        $response->assertForbidden();
+        $this->assertSame('open', $ticket->fresh()->status);
+    }
+
+    private function createWebTicket(): SupportTicket
+    {
+        return SupportTicket::create([
             'ticket_number' => 'SUP-TEST-001',
             'name' => 'Sam Worker',
             'email' => 'sam@example.com',
@@ -114,22 +163,5 @@ class SupportPageTest extends TestCase
             'message' => 'I was charged twice for booking.',
             'status' => 'open',
         ]);
-
-        $indexResponse = $this->actingAs($this->admin)->get('/admin/support');
-        $indexResponse->assertStatus(200);
-        $indexResponse->assertSee($ticket->ticket_number);
-
-        $showResponse = $this->actingAs($this->admin)->get("/admin/support/{$ticket->id}");
-        $showResponse->assertStatus(200);
-        $showResponse->assertSee('Invoice discrepancy');
-
-        $updateResponse = $this->actingAs($this->admin)->post("/admin/support/{$ticket->id}/update-status", [
-            'status' => 'resolved',
-            'admin_notes' => 'Verified transaction log and refunded duplicate charge.',
-        ]);
-
-        $updateResponse->assertRedirect();
-        $this->assertEquals('resolved', $ticket->fresh()->status);
-        $this->assertEquals('Verified transaction log and refunded duplicate charge.', $ticket->fresh()->admin_notes);
     }
 }
