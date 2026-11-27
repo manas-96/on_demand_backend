@@ -131,6 +131,76 @@
             </table>
         </div>
     </div>
+
+    <!-- Website support-form requests (stored in the database, not Firestore) -->
+    <div id="web-requests" class="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-xl">
+        <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+            <div>
+                <h2 class="text-sm font-bold text-white">Website Requests</h2>
+                <p class="text-xs text-slate-400">Submitted through the public support form on the website.</p>
+            </div>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">{{ $webTickets->total() }}</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm text-slate-300">
+                <thead class="bg-slate-950 text-[11px] uppercase font-bold text-slate-400 border-b border-slate-800 tracking-wider">
+                    <tr>
+                        <th class="px-6 py-4">Ticket</th>
+                        <th class="px-6 py-4">Requester</th>
+                        <th class="px-6 py-4">Subject</th>
+                        <th class="px-6 py-4 text-center">Status</th>
+                        <th class="px-6 py-4">Submitted</th>
+                        <th class="px-6 py-4 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/80">
+                    @forelse($webTickets as $webTicket)
+                        @php
+                            $webStatusClasses = match($webTicket->status) {
+                                'open' => 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+                                'in_progress' => 'bg-blue-500/10 text-blue-400 border-blue-500/20',
+                                'resolved' => 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                                default => 'bg-slate-800 text-slate-400 border-slate-700',
+                            };
+                        @endphp
+                        <tr class="hover:bg-slate-800/40 transition">
+                            <td class="px-6 py-4">
+                                <span class="font-mono font-bold text-white text-xs">{{ $webTicket->ticket_number }}</span>
+                                <div class="text-[10px] text-slate-500 mt-1 uppercase">{{ $webTicket->category }}</div>
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="font-bold text-white">{{ $webTicket->name }}</div>
+                                <div class="text-[11px] text-slate-400">{{ $webTicket->email }}</div>
+                            </td>
+                            <td class="px-6 py-4">
+                                <div class="text-xs font-semibold text-slate-200 truncate max-w-[260px]">{{ $webTicket->subject }}</div>
+                            </td>
+                            <td class="px-6 py-4 text-center">
+                                <span class="px-2.5 py-1 rounded-lg border text-[10px] font-extrabold uppercase tracking-wider {{ $webStatusClasses }}">
+                                    {{ str_replace('_', ' ', $webTicket->status) }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 text-xs text-slate-400 whitespace-nowrap">
+                                {{ $webTicket->created_at->inDisplayTimezone()->format('M d, Y H:i') }}
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <a href="{{ route('admin.support.web.show', $webTicket) }}" class="px-3 py-1.5 rounded-lg bg-slate-800 text-xs font-semibold text-amber-400 hover:bg-slate-700 transition">View</a>
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="6" class="px-6 py-10 text-center text-xs text-slate-500">No website support requests yet.</td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+        @if($webTickets->hasPages())
+            <div class="px-6 py-4 border-t border-slate-800">
+                {{ $webTickets->fragment('web-requests')->links() }}
+            </div>
+        @endif
+    </div>
 </div>
 
 <!-- Firebase SDKs -->

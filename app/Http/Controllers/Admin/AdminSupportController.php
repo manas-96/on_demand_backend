@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\SupportTicket;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class AdminSupportController extends Controller
@@ -17,7 +19,12 @@ class AdminSupportController extends Controller
         $firebaseConfig = config('services.firebase');
         $adminUser = auth()->user();
 
-        return view('admin.support.index', compact('firebaseConfig', 'adminUser'));
+        $webTickets = SupportTicket::query()
+            ->latest()
+            ->paginate(15, pageName: 'web_page')
+            ->withQueryString();
+
+        return view('admin.support.index', compact('firebaseConfig', 'adminUser', 'webTickets'));
     }
 
     /**
@@ -36,10 +43,27 @@ class AdminSupportController extends Controller
     }
 
     /**
-     * Legacy or fallback status update route.
+     * Show a ticket submitted through the public website support form.
      */
-    public function updateStatus(Request $request, string $id): RedirectResponse
+    public function showWebTicket(SupportTicket $supportTicket): View
     {
-        return back()->with('success', 'Ticket status updated.');
+        return view('admin.support.show', ['ticket' => $supportTicket->load('user')]);
+    }
+
+    /**
+     * Update the status and internal notes of a website support ticket.
+     */
+    public function updateWebTicketStatus(Request $request, SupportTicket $supportTicket): RedirectResponse
+    {
+        $validated = $request->validate([
+            'status' => ['required', 'string', Rule::in(SupportTicket::STATUSES)],
+            'admin_notes' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $supportTicket->update($validated);
+
+        return redirect()
+            ->route('admin.support.web.show', $supportTicket)
+            ->with('success', "Ticket {$supportTicket->ticket_number} updated.");
     }
 }

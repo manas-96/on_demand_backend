@@ -11,6 +11,13 @@ class SupportTicket extends Model
     use HasFactory;
 
     /**
+     * Statuses an admin can set on a ticket.
+     *
+     * @var list<string>
+     */
+    public const STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array<int, string>
