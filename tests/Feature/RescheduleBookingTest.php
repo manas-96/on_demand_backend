@@ -7,6 +7,7 @@ use App\Enums\ServiceRequestStatus;
 use App\Enums\UserRole;
 use App\Mail\BookingRescheduledMail;
 use App\Models\JobAssignment;
+use App\Models\Notification;
 use App\Models\ServiceCategory;
 use App\Models\ServiceRequest;
 use App\Models\User;
@@ -64,6 +65,32 @@ class RescheduleBookingTest extends TestCase
         Mail::assertSent(BookingRescheduledMail::class, fn (BookingRescheduledMail $mail) => $mail->hasTo('tech@example.com')
             && $mail->recipientRole === 'technician');
         Mail::assertSentCount(2);
+
+        foreach ([$this->provider, $this->technician] as $recipient) {
+            $this->assertDatabaseHas('notifications', [
+                'user_id' => $recipient->id,
+                'type' => 'booking',
+                'title' => 'Booking Rescheduled',
+                'body' => "Booking #{$booking->request_number} moved to Wed, Dec 02, 2026 at 2:00 PM.",
+            ]);
+        }
+        $this->assertDatabaseMissing('notifications', ['user_id' => $this->customer->id, 'title' => 'Booking Rescheduled']);
+    }
+
+    public function test_rescheduling_again_notifies_again(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-27 09:00', 'UTC'));
+        $booking = $this->createBooking(['request_type' => 'direct', 'target_provider_id' => $this->provider->id]);
+
+        foreach (['2026-12-02', '2026-12-03'] as $date) {
+            $this->actingAs($this->customer, 'sanctum')->postJson("/api/v1/customer/requests/{$booking->id}/reschedule", [
+                'preferred_date' => $date,
+                'preferred_start_time' => '14:00',
+            ])->assertOk();
+        }
+
+        Mail::assertSentCount(2);
+        $this->assertSame(2, Notification::where('user_id', $this->provider->id)->where('title', 'Booking Rescheduled')->count());
     }
 
     /**
@@ -139,6 +166,7 @@ class RescheduleBookingTest extends TestCase
         ])->assertUnprocessable()->assertJsonPath('message', 'Your booking is already scheduled for that date and time.');
 
         Mail::assertNothingSent();
+        $this->assertDatabaseMissing('notifications', ['title' => 'Booking Rescheduled']);
     }
 
     #[DataProvider('closedStatuses')]
@@ -192,6 +220,7 @@ class RescheduleBookingTest extends TestCase
         ])->assertOk();
 
         Mail::assertNothingSent();
+        $this->assertDatabaseMissing('notifications', ['title' => 'Booking Rescheduled']);
     }
 
     public function test_customer_cannot_reschedule_someone_elses_booking(): void
