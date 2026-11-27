@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\JobAssignmentStatus;
 use App\Enums\RequestType;
 use App\Enums\ServiceRequestStatus;
 use App\Services\BusinessTime;
@@ -260,6 +261,25 @@ class ServiceRequest extends Model
     public function rescheduleDeadline(): ?Carbon
     {
         return $this->scheduledStartAt()?->copy()->subHours(self::RESCHEDULE_CUTOFF_HOURS);
+    }
+
+    /**
+     * Who is told when the customer reschedules: the provider on the active job assignment
+     * (or the one chosen for a direct request) and the assigned technician, if any.
+     *
+     * @return array{provider: ?User, technician: ?User}
+     */
+    public function rescheduleRecipients(): array
+    {
+        $assignment = $this->jobAssignments()
+            ->where('status', '!=', JobAssignmentStatus::Declined->value)
+            ->latest()
+            ->first();
+
+        return [
+            'provider' => $assignment?->provider ?? $this->targetProvider,
+            'technician' => $assignment?->technician,
+        ];
     }
 
     /**

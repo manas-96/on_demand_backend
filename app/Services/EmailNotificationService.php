@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Enums\JobAssignmentStatus;
 use App\Enums\UserRole;
 use App\Mail\BookingCancelledMail;
 use App\Mail\BookingCompletedMail;
@@ -325,15 +324,7 @@ class EmailNotificationService
     public function sendBookingRescheduled(ServiceRequest $serviceRequest, string $previousSchedule): void
     {
         try {
-            $assignment = $serviceRequest->jobAssignments()
-                ->where('status', '!=', JobAssignmentStatus::Declined->value)
-                ->latest()
-                ->first();
-
-            $recipients = [
-                'provider' => $assignment?->provider ?? $serviceRequest->targetProvider,
-                'technician' => $assignment?->technician,
-            ];
+            $recipients = $serviceRequest->rescheduleRecipients();
             $scheduleKey = $serviceRequest->preferred_date?->toDateString().' '.$serviceRequest->preferred_start_time;
 
             foreach ($recipients as $role => $user) {

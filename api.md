@@ -441,7 +441,7 @@ Every other `/customer/*` endpoint (bookings, addresses, payments, reviews) stil
   - Allowed until **24 hours before the current scheduled start**, worked out in the booking's `timezone` (no start time → start of that day). E.g. booked for Nov 30, 10:00 PM → can change until Nov 29, 10:00 PM.
   - Not allowed once the booking is `in_progress`, `completed` or `cancelled`.
   - The new slot must be in the future and differ from the current one.
-- **Effect**: Updates the schedule and emails the booking's provider (assigned provider, or the one chosen for a direct request) and the assigned technician, if any. A broadcast request no provider has taken yet sends no email.
+- **Effect**: Updates the schedule, then emails **and push-notifies** the booking's provider (assigned provider, or the one chosen for a direct request) and the assigned technician, if any (push title "Booking Rescheduled", payload `screen: booking_details`). A broadcast request no provider has taken yet notifies no one.
 - **Success Response (`200 OK`)**: `{ "success": true, "message": "Booking rescheduled. Your provider has been notified.", "data": { ...service request... } }`
 - **Errors (`422`)**, in `message`:
   - "Bookings can only be rescheduled up to 24 hours before the scheduled time."

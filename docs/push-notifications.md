@@ -233,6 +233,8 @@ SendPushNotificationJob::dispatch(
 | Technician assigned | Technician | `booking` | New Job Assignment | You have been assigned to a new service request. | `{"type":"booking", "booking_id":"SR-...", "screen":"booking_details"}` |
 | Quotation approved | Customer | `booking` | Quotation Approved | The quotation for your service request has been approved. | `{"type":"booking", "booking_id":"SR-...", "screen":"booking_details"}` |
 | Quotation approved | Technician | `booking` | Quotation Approved | The quotation for the assigned job has been approved. | `{"type":"booking", "booking_id":"SR-...", "screen":"booking_details"}` |
+| Customer reschedules | Provider | `booking` | Booking Rescheduled | Booking #SR-... moved to *Wed, Dec 02, 2026 at 2:00 PM*. | `{"type":"booking", "booking_id":"SR-...", "screen":"booking_details"}` |
+| Customer reschedules | Technician | `booking` | Booking Rescheduled | Booking #SR-... moved to *Wed, Dec 02, 2026 at 2:00 PM*. | `{"type":"booking", "booking_id":"SR-...", "screen":"booking_details"}` |
 | Job completed | Customer | `booking` | Job Completed | Your service request has been completed. | `{"type":"booking", "booking_id":"SR-...", "screen":"booking_details"}` |
 | Job completed | Technician | `booking` | Job Completed | The assigned job has been marked as completed. | `{"type":"booking", "booking_id":"SR-...", "screen":"booking_details"}` |
 | Provider sends message | Customer | `message` | New Message | *Message text* | `{"type":"message", "booking_id":"SR-...", "job_id":"SR-...", "sender_id":"...", "receiver_id":"...", "screen":"chat"}` |
