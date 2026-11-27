@@ -12,6 +12,7 @@ Welcome to the official RESTful API documentation for the On-Demand Service Plat
    - [GET /api/v1/auth/me](#get-apiv1authme)
    - [POST /api/v1/auth/logout](#post-apiv1authlogout)
 3. [Customer APIs](#3-customer-apis)
+   - [Public catalog (no login)](#public-catalog-no-login)
    - [GET /api/v1/customer/requests](#get-apiv1customerrequests)
    - [POST /api/v1/customer/requests](#post-apiv1customerrequests)
    - [GET /api/v1/customer/requests/{id}](#get-apiv1customerrequestsid)
@@ -159,6 +160,20 @@ Accept: application/json
 ---
 
 ## 3. Customer APIs
+
+### Public catalog (no login)
+Guests can browse before signing in, so these read-only endpoints need **no token** (a token is accepted and ignored). Rate limit: 300 requests per minute per IP.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/v1/customer/categories` | Active parent categories (`?search=`) |
+| `GET /api/v1/customer/categories/{id}` | One category with its subcategories |
+| `GET /api/v1/customer/categories/{id}/subcategories` | Active subcategories (`?search=`) |
+| `GET /api/v1/customer/banners` | Active home banners |
+| `GET /api/v1/customer/videos` | Active promotional videos |
+| `GET /api/v1/customer/providers` | Approved providers: business name, address, map position (no email or phone) |
+
+Every other `/customer/*` endpoint (bookings, addresses, payments, reviews) still requires `Authorization: Bearer <TOKEN>` and returns `401` without it.
 
 ### GET `/api/v1/customer/requests`
 - **Scenario**: Customer retrieves a paginated list of their own service requests.
