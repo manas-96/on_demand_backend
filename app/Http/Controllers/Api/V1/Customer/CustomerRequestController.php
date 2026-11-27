@@ -18,6 +18,7 @@ use App\Models\Quote;
 use App\Models\Review;
 use App\Models\ServiceRequest;
 use App\Services\Bidding\BiddingService;
+use App\Services\Booking\BookingRescheduleService;
 use App\Services\BusinessTime;
 use App\Services\EmailNotificationService;
 use App\Services\Matching\ProviderMatchingService;
@@ -222,6 +223,27 @@ class CustomerRequestController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Provider bid selected successfully.',
+        ]);
+    }
+
+    /**
+     * Move the booking to a new date/time (allowed until 24 hours before the current slot).
+     */
+    public function reschedule(Request $request, string|int $id, BookingRescheduleService $rescheduleService): JsonResponse
+    {
+        $validated = $request->validate([
+            'preferred_date' => ['required', 'date_format:Y-m-d'],
+            'preferred_start_time' => ['nullable', 'date_format:H:i'],
+            'preferred_end_time' => ['nullable', 'date_format:H:i', 'after:preferred_start_time'],
+        ]);
+
+        $serviceRequest = $rescheduleService->reschedule($this->findServiceRequestForUser($request, $id), $validated);
+        $serviceRequest->load(['category', 'subCategory', 'service', 'photos', 'targetProvider', 'jobAssignments.technician', 'jobAssignments.provider']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Booking rescheduled. Your provider has been notified.',
+            'data' => new ServiceRequestResource($serviceRequest),
         ]);
     }
 

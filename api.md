@@ -19,6 +19,7 @@ Welcome to the official RESTful API documentation for the On-Demand Service Plat
    - [GET /api/v1/customer/requests/{id}/bids](#get-apiv1customerrequestsidbids)
    - [POST /api/v1/customer/bids/{bidId}/negotiate](#post-apiv1customerbidsbididnegotiate)
    - [POST /api/v1/customer/bids/{bidId}/select](#post-apiv1customerbidsbididselect)
+   - [POST /api/v1/customer/requests/{id}/reschedule](#post-apiv1customerrequestsidreschedule)
    - [POST /api/v1/customer/quotes/{quoteId}/approve](#post-apiv1customerquotesquoteidapprove)
    - [Two-phase payments (Stripe)](#two-phase-payments-stripe)
    - [POST /api/v1/customer/requests/{id}/payment-intent](#post-apiv1customerrequestsidpayment-intent)
@@ -425,6 +426,30 @@ Every other `/customer/*` endpoint (bookings, addresses, payments, reviews) stil
   "message": "Provider bid selected successfully."
 }
 ```
+
+---
+
+### POST `/api/v1/customer/requests/{id}/reschedule`
+- **Scenario**: Customer moves their booking to a new date/time from the booking details page.
+- **Headers**: `Authorization: Bearer <TOKEN>`, `Accept: application/json`
+- **Payload**:
+```json
+{ "preferred_date": "2026-12-02", "preferred_start_time": "14:00", "preferred_end_time": "16:00" }
+```
+  - `preferred_date` *(required, `YYYY-MM-DD`)*, `preferred_start_time` / `preferred_end_time` *(optional, `HH:MM`)*: customer's local wall-clock values, like when creating the request.
+- **Rules**:
+  - Allowed until **24 hours before the current scheduled start**, worked out in the booking's `timezone` (no start time → start of that day). E.g. booked for Nov 30, 10:00 PM → can change until Nov 29, 10:00 PM.
+  - Not allowed once the booking is `in_progress`, `completed` or `cancelled`.
+  - The new slot must be in the future and differ from the current one.
+- **Effect**: Updates the schedule and emails the booking's provider (assigned provider, or the one chosen for a direct request) and the assigned technician, if any. A broadcast request no provider has taken yet sends no email.
+- **Success Response (`200 OK`)**: `{ "success": true, "message": "Booking rescheduled. Your provider has been notified.", "data": { ...service request... } }`
+- **Errors (`422`)**, in `message`:
+  - "Bookings can only be rescheduled up to 24 hours before the scheduled time."
+  - "This booking can no longer be rescheduled."
+  - "Please choose a date and time in the future."
+  - "Your booking is already scheduled for that date and time."
+- `404` if the booking isn't the caller's.
+- **Related fields on every service request**: `can_reschedule` *(bool)* and `reschedule_deadline` *(ISO 8601 UTC, or null)*. Apps show the "Change date & time" action from `can_reschedule` instead of computing the rule themselves.
 
 ---
 

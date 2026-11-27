@@ -2,10 +2,12 @@
 
 namespace App\Services;
 
+use App\Enums\JobAssignmentStatus;
 use App\Enums\UserRole;
 use App\Mail\BookingCancelledMail;
 use App\Mail\BookingCompletedMail;
 use App\Mail\BookingCreatedCustomerMail;
+use App\Mail\BookingRescheduledMail;
 use App\Mail\ProviderApprovedMail;
 use App\Mail\ProviderRegisteredAdminMail;
 use App\Mail\QuoteAcceptedByCustomerProviderMail;
@@ -311,6 +313,51 @@ class EmailNotificationService
             }
         } catch (Throwable $e) {
             Log::error('EmailNotificationService sendBookingCancelled failed: '.$e->getMessage(), [
+                'request_id' => $serviceRequest->id,
+            ]);
+        }
+    }
+
+    /**
+     * Email the booking's provider and assigned technician that the customer moved the date/time.
+     * Keyed on the new schedule, so each later reschedule sends again.
+     */
+    public function sendBookingRescheduled(ServiceRequest $serviceRequest, string $previousSchedule): void
+    {
+        try {
+            $assignment = $serviceRequest->jobAssignments()
+                ->where('status', '!=', JobAssignmentStatus::Declined->value)
+                ->latest()
+                ->first();
+
+            $recipients = [
+                'provider' => $assignment?->provider ?? $serviceRequest->targetProvider,
+                'technician' => $assignment?->technician,
+            ];
+            $scheduleKey = $serviceRequest->preferred_date?->toDateString().' '.$serviceRequest->preferred_start_time;
+
+            foreach ($recipients as $role => $user) {
+                if (! $user || empty($user->email)) {
+                    continue;
+                }
+
+                $dedupKey = $role.'_'.$scheduleKey;
+
+                if (! $this->shouldSendEmail('booking_rescheduled', $serviceRequest->id, $user->email, $dedupKey)) {
+                    continue;
+                }
+
+                try {
+                    Mail::to($user->email)->send(new BookingRescheduledMail($serviceRequest, $user, $role, $previousSchedule));
+                } catch (Throwable $e) {
+                    $this->releaseDeduplicationLock('booking_rescheduled', $serviceRequest->id, $user->email, $dedupKey);
+                    Log::error("EmailNotificationService sendBookingRescheduled {$role} dispatch failed: ".$e->getMessage(), [
+                        'request_id' => $serviceRequest->id,
+                    ]);
+                }
+            }
+        } catch (Throwable $e) {
+            Log::error('EmailNotificationService sendBookingRescheduled failed: '.$e->getMessage(), [
                 'request_id' => $serviceRequest->id,
             ]);
         }

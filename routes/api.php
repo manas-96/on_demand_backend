@@ -95,6 +95,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/requests', [CustomerRequestController::class, 'store']);
             Route::get('/requests/{id}', [CustomerRequestController::class, 'show']);
             Route::post('/requests/{id}/cancel', [CustomerRequestController::class, 'cancel']);
+            Route::post('/requests/{id}/reschedule', [CustomerRequestController::class, 'reschedule']);
             Route::get('/requests/{id}/bids', [CustomerRequestController::class, 'bids']);
             Route::get('/requests/{id}/quote', [CustomerRequestController::class, 'getQuote']);
             Route::get('/requests/{id}/invoice/download', [CustomerRequestController::class, 'downloadInvoice']);
