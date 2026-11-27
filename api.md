@@ -438,6 +438,11 @@ Accept: application/json
   }
 }
 ```
+- **`{quoteId}`**: the quote id, or the booking's id / `request_number` (approves that booking's latest quote). Only the signed-in customer's own bookings are matched.
+- **Errors**:
+  - `404` "Quotation not found." — no matching quote on one of your bookings.
+  - `422` "Quote must be approved by provider before customer approval." — the provider has not signed off the quote yet.
+  - `422` "This quotation is no longer awaiting your approval." — the quote is already approved or rejected.
 
 ---
 
