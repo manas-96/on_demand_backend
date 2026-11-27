@@ -51,6 +51,16 @@ Route::prefix('v1')->group(function () {
         ]);
     });
 
+    // Public customer catalog: guests can browse before signing in (read-only, no user data).
+    Route::prefix('customer')->middleware('throttle:300,1')->group(function () {
+        Route::get('/categories', [CustomerCategoryController::class, 'index']);
+        Route::get('/categories/{id}', [CustomerCategoryController::class, 'show']);
+        Route::get('/categories/{id}/subcategories', [CustomerCategoryController::class, 'subcategories']);
+        Route::get('/banners', [CustomerCategoryController::class, 'banners']);
+        Route::get('/videos', [CustomerCategoryController::class, 'videos']);
+        Route::get('/providers', [CustomerProviderController::class, 'index']);
+    });
+
     // Protected API Endpoints
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/auth/me', [AuthController::class, 'me']);
@@ -73,13 +83,6 @@ Route::prefix('v1')->group(function () {
 
         // Customer APIs
         Route::prefix('customer')->group(function () {
-            // Customer Categories & Providers
-            Route::get('/categories', [CustomerCategoryController::class, 'index']);
-            Route::get('/categories/{id}', [CustomerCategoryController::class, 'show']);
-            Route::get('/categories/{id}/subcategories', [CustomerCategoryController::class, 'subcategories']);
-            Route::get('/banners', [CustomerCategoryController::class, 'banners']);
-            Route::get('/videos', [CustomerCategoryController::class, 'videos']);
-            Route::get('/providers', [CustomerProviderController::class, 'index']);
             // Customer Addresses
             Route::get('/addresses', [CustomerAddressController::class, 'index']);
             Route::post('/addresses', [CustomerAddressController::class, 'store']);
