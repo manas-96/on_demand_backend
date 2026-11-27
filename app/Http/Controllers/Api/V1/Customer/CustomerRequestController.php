@@ -30,6 +30,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use InvalidArgumentException;
 
 class CustomerRequestController extends Controller
 {
@@ -262,7 +263,10 @@ class CustomerRequestController extends Controller
             ? 'SR-'.substr($cleanId, 0, 8).'-'.substr($cleanId, 8)
             : $cleanId;
 
+        // The app sends the booking id or number here, so match either the quote or its request,
+        // but only ever among this customer's own requests.
         $quote = Quote::with('serviceRequest')
+            ->whereHas('serviceRequest', fn ($sq) => $sq->where('customer_id', $request->user()->id))
             ->where(function ($query) use ($cleanId, $hyphenated) {
                 if (is_numeric($cleanId) && (float) $cleanId <= 2147483647) {
                     $query->where('id', (int) $cleanId)
@@ -279,21 +283,15 @@ class CustomerRequestController extends Controller
             ->first();
 
         if (! $quote) {
-            $quote = Quote::with('serviceRequest')->latest()->first();
-        }
-
-        if (! $quote) {
             return response()->json(['success' => false, 'message' => 'Quotation not found.'], 404);
         }
 
-        if (! $quote->is_approved_by_provider) {
-            $quote->update([
-                'is_approved_by_provider' => true,
-                'provider_approved_at' => now(),
-            ]);
+        // Provider approval is the provider's step; a customer can only approve a quote the provider has signed off.
+        try {
+            $this->quoteService->approveQuote($request->user(), $quote);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
-
-        $approval = $this->quoteService->approveQuote($request->user(), $quote);
 
         return response()->json([
             'success' => true,

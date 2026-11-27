@@ -187,6 +187,11 @@ class QuoteService
             throw new InvalidArgumentException('Quote must be approved by provider before customer approval.');
         }
 
+        // Re-approving would push a finished or rejected job back to in-progress.
+        if ($quote->status !== QuoteStatus::Pending) {
+            throw new InvalidArgumentException('This quotation is no longer awaiting your approval.');
+        }
+
         return DB::transaction(function () use ($customer, $quote) {
             $quote->update(['status' => QuoteStatus::Approved]);
 
