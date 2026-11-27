@@ -210,6 +210,74 @@ class ServiceRequest extends Model
     }
 
     /**
+     * Hours before the scheduled start after which the customer can no longer reschedule.
+     */
+    public const RESCHEDULE_CUTOFF_HOURS = 24;
+
+    /**
+     * Scheduled start as a moment in time: the customer's wall-clock date and start time
+     * in the booking's zone. Without a start time the day's start is used, so the
+     * reschedule cutoff errs on the early side.
+     */
+    public function scheduledStartAt(): ?Carbon
+    {
+        if (! $this->preferred_date) {
+            return null;
+        }
+
+        $time = $this->preferred_start_time
+            ? Carbon::parse($this->preferred_start_time)->format('H:i:s')
+            : '00:00:00';
+
+        return Carbon::parse($this->preferred_date->toDateString().' '.$time, $this->localTimezone());
+    }
+
+    /**
+     * Human-readable schedule in the customer's wall-clock time, e.g. "Mon, Nov 30, 2026 at 10:00 PM".
+     */
+    public function scheduleLabel(): string
+    {
+        if (! $this->preferred_date) {
+            return 'As soon as possible';
+        }
+
+        $label = $this->preferred_date->format('D, M d, Y');
+
+        if ($this->preferred_start_time) {
+            $label .= ' at '.Carbon::parse($this->preferred_start_time)->format('g:i A');
+        }
+
+        if ($this->preferred_end_time) {
+            $label .= ' – '.Carbon::parse($this->preferred_end_time)->format('g:i A');
+        }
+
+        return $label;
+    }
+
+    /**
+     * Last moment the customer may change the date or time (24 hours before the scheduled start).
+     */
+    public function rescheduleDeadline(): ?Carbon
+    {
+        return $this->scheduledStartAt()?->copy()->subHours(self::RESCHEDULE_CUTOFF_HOURS);
+    }
+
+    /**
+     * Whether the customer may still move this booking: it is not underway or closed,
+     * and the cutoff has not passed.
+     */
+    public function canBeRescheduled(): bool
+    {
+        if (in_array($this->status, [ServiceRequestStatus::InProgress, ServiceRequestStatus::Completed, ServiceRequestStatus::Cancelled], true)) {
+            return false;
+        }
+
+        $deadline = $this->rescheduleDeadline();
+
+        return $deadline !== null && now()->lt($deadline);
+    }
+
+    /**
      * Resolve the active assigned provider user ID for this service request.
      */
     public function resolveProviderId(): ?int

@@ -174,6 +174,8 @@ class ServiceRequestResource extends JsonResource
             'preferred_start_time' => $this->preferred_start_time,
             'preferred_end_time' => $this->preferred_end_time,
             'timezone' => $this->timezone,
+            'can_reschedule' => $this->canBeRescheduled(),
+            'reschedule_deadline' => $this->rescheduleDeadline()?->utc()->toIso8601String(),
             'priority' => $this->priority,
             'status' => $this->status?->value,
             'provider_id' => $assignedProv?->id ?? $approvedQuote?->provider_id ?? $firstAssignment?->provider_id ?? $this->target_provider_id,
